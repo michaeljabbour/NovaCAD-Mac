@@ -1,0 +1,172 @@
+  0
+SECTION
+  2
+HEADER
+  9
+$ACADVER
+  1
+AC1015
+  9
+$INSUNITS
+ 70
+     1
+  0
+ENDSEC
+  0
+SECTION
+  2
+TABLES
+  0
+TABLE
+  2
+LAYER
+  0
+LAYER
+  2
+0
+ 70
+     0
+ 62
+     7
+  6
+CONTINUOUS
+  0
+LAYER
+  2
+HOST_LAYER
+ 70
+     0
+ 62
+     2
+  6
+CONTINUOUS
+  0
+ENDTAB
+  0
+ENDSEC
+  0
+SECTION
+  2
+BLOCKS
+  0
+BLOCK
+  8
+0
+  2
+RESOLVED_XREF
+ 70
+     4
+  1
+resolved_xref.dxf
+ 10
+0.0
+ 20
+0.0
+ 30
+0.0
+  0
+ENDBLK
+  8
+0
+  0
+BLOCK
+  8
+0
+  2
+MISSING_XREF
+ 70
+     4
+  1
+missing_xref.dxf
+ 10
+0.0
+ 20
+0.0
+ 30
+0.0
+  0
+ENDBLK
+  8
+0
+  0
+ENDSEC
+  0
+SECTION
+  2
+ENTITIES
+  0
+LINE
+  5
+100
+  8
+0
+ 10
+0.0
+ 20
+0.0
+ 30
+0.0
+ 11
+100.0
+ 21
+0.0
+ 31
+0.0
+  0
+CIRCLE
+  5
+101
+  8
+HOST_LAYER
+ 10
+200.0
+ 20
+200.0
+ 30
+0.0
+ 40
+25.0
+  0
+INSERT
+  5
+102
+  8
+0
+  2
+RESOLVED_XREF
+ 10
+500.0
+ 20
+500.0
+ 30
+0.0
+ 41
+1.0
+ 42
+1.0
+ 50
+0.0
+  0
+INSERT
+  5
+103
+  8
+HOST_LAYER
+  2
+MISSING_XREF
+ 10
+-500.0
+ 20
+-500.0
+ 30
+0.0
+ 41
+1.0
+ 42
+1.0
+ 50
+0.0
+  0
+ENDSEC
+  0
+EOF

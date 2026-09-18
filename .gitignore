@@ -1,0 +1,97 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+Packages/
+Package.pins
+
+# Xcode
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+DerivedData/
+*.dSYM.zip
+*.dSYM
+timeline.xctimeline
+playground.xcworkspace
+*.moved-aside
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.DocumentRevisions-V100
+.TemporaryItems
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# OneDrive sync artifacts (this project lives in a OneDrive-synced folder)
+desktop.ini
+*.tmp
+* (Conflicted copy*
+*-conflict-*
+
+# Editor swap/backup files
+*~
+*.swp
+*.swo
+.idea/
+
+# Agent/tool state directories
+.claude/
+.kilo/
+.opencode/
+
+# Logs, crash reports, profiling output
+*.log
+*.crash
+*.ips
+*.trace
+
+# Secrets — never commit these if they show up
+.env
+.env.*
+*.pem
+*.p12
+*credentials*.json
+*service*account*.json
+*.key
+*.pfx
+*.jks
+
+# Test/sample drawings and generated previews — large CAD files don't belong
+# in git history (GitHub rejects any single file over 100MB outright), and
+# snapshot PNGs are throwaway verification output, not project assets.
+*.dxf
+*.dwg
+*.dwf
+*.dgn
+*.zip
+# ...except small hand-authored fixtures used by `swift test` — these are
+# project assets (checked-in regression coverage), not sample drawings.
+!Tests/Fixtures/*.dxf
+!Tests/Fixtures/*.json
+
+# Unzipped eTransmit packages (drawings + plot configs + textures)
+snapshot*.png
+render_*.png
+test_*.png
+Screenshot *.png
+Screen Shot *.png
+
+# Data/document formats that must never be committed (spreadsheets, BI
+# exports, SQL dumps, office documents).
+*.xlsx
+*.xls
+*.csv
+*.pbix
+*.pptx
+*.docx
+*.sql
+
+# Distribution artifacts produced by Scripts/build_pkg.sh — regenerate on
+# demand rather than committing a multi-MB binary installer to git history.
+*.pkg
