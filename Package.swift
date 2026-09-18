@@ -6,6 +6,7 @@ let package = Package(
     platforms: [.macOS(.v15)],
     products: [
         .executable(name: "NovaCAD", targets: ["DWGViewer"]),
+        .library(name: "CADCore", targets: ["CADCore"]),
     ],
     targets: [
         .target(
