@@ -109,6 +109,15 @@ install and first launch macOS shows an "unidentified developer" prompt —
 resolve it via **System Settings → Privacy & Security → Open Anyway**, or
 right-click → Open. The packaged build is Apple Silicon only.
 
+### Homebrew
+
+```sh
+brew install --cask ryandirezze/tap/novacad-mac
+```
+
+Homebrew auto-taps [`ryandirezze/tap`](https://github.com/ryandirezze/homebrew-tap)
+and installs only this app.
+
 ## Features
 
 ### View & navigate
@@ -284,6 +293,35 @@ Sources/
 Tests/DWGViewerTests/      # 1,200+ tests, 18 synthetic DXF fixtures
 Scripts/                   # build_app.sh, build_pkg.sh, icon generator
 ```
+
+## Use CADCore in your project
+
+CADCore — the streaming DXF parser and 2D geometry library — is published as
+a library product of this package, so other Swift projects can reuse it:
+
+```swift
+// Package.swift
+dependencies: [
+    .package(url: "https://github.com/ryandirezze/NovaCAD-Mac.git", from: "1.2.3"),
+],
+targets: [
+    .target(
+        name: "YourTarget",
+        dependencies: [
+            .product(name: "CADCore", package: "NovaCAD-Mac"),
+        ]
+    ),
+]
+```
+
+```swift
+import CADCore
+
+let document = try DXFParser.parse(url: drawingURL)
+print(document.layers.count, document.unitsLabel)
+```
+
+Requires macOS 15+ and adds no further dependencies.
 
 ## Known limitations
 
