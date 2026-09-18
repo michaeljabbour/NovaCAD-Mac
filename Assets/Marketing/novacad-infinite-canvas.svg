@@ -1,0 +1,370 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="2500" height="1000" viewBox="0 0 2500 1000" role="img" aria-labelledby="title description">
+  <title id="title">NovaCAD Infinite Canvas</title>
+  <desc id="description">A dark precision drafting canvas with original industrial geometry, floating CAD controls, and the message Your drawings. At Mac speed.</desc>
+  <defs>
+    <linearGradient id="atmosphere" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#05080c"/>
+      <stop offset="0.45" stop-color="#080d13"/>
+      <stop offset="1" stop-color="#0b1118"/>
+    </linearGradient>
+    <radialGradient id="cyanHaze" cx="77%" cy="45%" r="63%">
+      <stop offset="0" stop-color="#208cff" stop-opacity="0.12"/>
+      <stop offset="0.42" stop-color="#27d9ff" stop-opacity="0.035"/>
+      <stop offset="1" stop-color="#05080c" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="panelGlass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#172330" stop-opacity="0.94"/>
+      <stop offset="1" stop-color="#0a1017" stop-opacity="0.9"/>
+    </linearGradient>
+    <linearGradient id="ribbonGlass" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#17222d" stop-opacity="0.92"/>
+      <stop offset="1" stop-color="#0d151e" stop-opacity="0.72"/>
+    </linearGradient>
+    <pattern id="minorGrid" width="25" height="25" patternUnits="userSpaceOnUse">
+      <path d="M25 0H0V25" fill="none" stroke="#aab7c5" stroke-opacity="0.045" stroke-width="1"/>
+    </pattern>
+    <pattern id="majorGrid" width="125" height="125" patternUnits="userSpaceOnUse">
+      <rect width="125" height="125" fill="url(#minorGrid)"/>
+      <path d="M125 0H0V125" fill="none" stroke="#c4d2df" stroke-opacity="0.08" stroke-width="1"/>
+    </pattern>
+    <pattern id="hatch" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <path d="M0 0V14" stroke="#91a0ae" stroke-opacity="0.18" stroke-width="2"/>
+    </pattern>
+    <filter id="softGlow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="9" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="lineGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="shadow" x="-30%" y="-40%" width="170%" height="190%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#000000" flood-opacity="0.58"/>
+    </filter>
+    <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.72" numOctaves="3" seed="19" stitchTiles="stitch" result="noise"/>
+      <feColorMatrix in="noise" type="saturate" values="0" result="mono"/>
+      <feComponentTransfer in="mono" result="faded">
+        <feFuncA type="table" tableValues="0 0.028"/>
+      </feComponentTransfer>
+      <feBlend in="SourceGraphic" in2="faded" mode="screen"/>
+    </filter>
+    <mask id="drawingFade">
+      <linearGradient id="fadeAcross" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="black"/>
+        <stop offset="0.28" stop-color="#111"/>
+        <stop offset="0.43" stop-color="white"/>
+        <stop offset="1" stop-color="white"/>
+      </linearGradient>
+      <rect width="2500" height="1000" fill="url(#fadeAcross)"/>
+      <rect x="0" y="0" width="970" height="650" rx="180" fill="black"/>
+    </mask>
+    <clipPath id="factoryClip">
+      <path d="M650 0H2500V1000H320V760L650 620Z"/>
+    </clipPath>
+    <marker id="arrowCyan" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto-start-reverse">
+      <path d="M10 5L0 0V10Z" fill="#27d9ff"/>
+    </marker>
+    <marker id="arrowGray" markerWidth="9" markerHeight="9" refX="4.5" refY="4.5" orient="auto-start-reverse">
+      <path d="M9 4.5L0 0V9Z" fill="#98a8b7"/>
+    </marker>
+    <marker id="routeArrow" markerWidth="12" markerHeight="12" refX="8" refY="6" orient="auto">
+      <path d="M0 0L12 6L0 12L3.5 6Z" fill="#ff604d"/>
+    </marker>
+  </defs>
+
+  <g filter="url(#grain)">
+    <rect width="2500" height="1000" fill="url(#atmosphere)"/>
+    <rect width="2500" height="1000" fill="url(#cyanHaze)"/>
+    <rect width="2500" height="1000" fill="url(#majorGrid)"/>
+  </g>
+
+  <!-- Canvas coordinates and registration marks -->
+  <g fill="#80909f" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="12" letter-spacing="2" opacity="0.52">
+    <text x="1125" y="26">X 0125</text><text x="1375" y="26">X 0250</text><text x="1625" y="26">X 0375</text>
+    <text x="1875" y="26">X 0500</text><text x="2125" y="26">X 0625</text><text x="2375" y="26">X 0750</text>
+    <text x="2462" y="252" transform="rotate(90 2462 252)">Y 0125</text>
+    <text x="2462" y="502" transform="rotate(90 2462 502)">Y 0250</text>
+    <text x="2462" y="752" transform="rotate(90 2462 752)">Y 0375</text>
+  </g>
+  <g stroke="#8293a2" stroke-opacity="0.28">
+    <path d="M1125 0V15M1250 0V9M1375 0V15M1500 0V9M1625 0V15M1750 0V9M1875 0V15M2000 0V9M2125 0V15M2250 0V9M2375 0V15"/>
+    <path d="M2485 125H2500M2491 250H2500M2485 375H2500M2491 500H2500M2485 625H2500M2491 750H2500M2485 875H2500"/>
+  </g>
+
+  <!-- Original micro-factory drawing -->
+  <g clip-path="url(#factoryClip)" mask="url(#drawingFade)" stroke-linecap="square" stroke-linejoin="miter">
+    <!-- Site boundary and structural bays -->
+    <g fill="none" stroke="#c5d0da" stroke-opacity="0.48">
+      <path d="M720 116H2318V902H720Z" stroke-width="3"/>
+      <path d="M738 134H2300V884H738Z" stroke-width="1"/>
+      <path d="M720 264H2318M720 420H2318M720 576H2318M720 732H2318" stroke-width="1.5" stroke-dasharray="10 8" opacity="0.7"/>
+      <path d="M918 116V902M1116 116V902M1314 116V902M1512 116V902M1710 116V902M1908 116V902M2106 116V902" stroke-width="1.5" stroke-dasharray="10 8" opacity="0.7"/>
+    </g>
+    <!-- Column grid -->
+    <g fill="#0b1118" stroke="#d6e0e8" stroke-opacity="0.68" stroke-width="2">
+      <g id="columnsA">
+        <rect x="707" y="103" width="26" height="26"/><rect x="905" y="103" width="26" height="26"/>
+        <rect x="1103" y="103" width="26" height="26"/><rect x="1301" y="103" width="26" height="26"/>
+        <rect x="1499" y="103" width="26" height="26"/><rect x="1697" y="103" width="26" height="26"/>
+        <rect x="1895" y="103" width="26" height="26"/><rect x="2093" y="103" width="26" height="26"/>
+        <rect x="2305" y="103" width="26" height="26"/>
+      </g>
+      <use href="#columnsA" transform="translate(0 148)"/><use href="#columnsA" transform="translate(0 304)"/>
+      <use href="#columnsA" transform="translate(0 460)"/><use href="#columnsA" transform="translate(0 616)"/>
+      <use href="#columnsA" transform="translate(0 773)"/>
+    </g>
+
+    <!-- Service corridors -->
+    <g fill="url(#hatch)" stroke="#8393a2" stroke-opacity="0.44">
+      <path d="M752 444H2278V536H752Z"/>
+      <path d="M1360 142H1450V876H1360Z"/>
+    </g>
+    <g fill="none" stroke="#b7c3ce" stroke-opacity="0.55" stroke-width="2" stroke-dasharray="18 10 3 10">
+      <path d="M760 490H2270"/><path d="M1405 150V868"/>
+    </g>
+
+    <!-- Machine cell 01: press line -->
+    <g transform="translate(975 298)" fill="none" stroke="#cbd5de" stroke-opacity="0.72" stroke-width="2">
+      <path d="M0 0H316V110H0Z"/>
+      <path d="M18 18H92V92H18ZM112 18H204V92H112ZM224 18H298V92H224Z"/>
+      <circle cx="55" cy="55" r="22"/><circle cx="261" cy="55" r="22"/>
+      <path d="M132 41H184V69H132ZM10 110V126H306V110"/>
+      <path d="M32 0V-18M284 0V-18M32 128V110M284 128V110" stroke-dasharray="4 4"/>
+    </g>
+    <g fill="#a6b4c1" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="13" letter-spacing="2" opacity="0.72">
+      <text x="977" y="288">MC-01 / FORMING</text><text x="1188" y="394">P-17</text>
+    </g>
+
+    <!-- Machine cell 02: robot island -->
+    <g transform="translate(1500 286)" fill="none" stroke="#cbd5de" stroke-opacity="0.7" stroke-width="2">
+      <rect width="350" height="130" rx="4"/>
+      <path d="M16 16H334V114H16Z" stroke-dasharray="8 6"/>
+      <circle cx="86" cy="65" r="34"/><circle cx="86" cy="65" r="10"/>
+      <path d="M86 55L125 34L160 61L202 42" stroke-width="6"/>
+      <circle cx="125" cy="34" r="8"/><circle cx="160" cy="61" r="8"/>
+      <path d="M215 28H316V102H215ZM231 44H300V86H231Z"/>
+      <path d="M247 65H284M265 47V83" stroke-dasharray="5 5"/>
+    </g>
+    <g fill="#a6b4c1" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="13" letter-spacing="2" opacity="0.72">
+      <text x="1502" y="276">MC-02 / ROBOTIC CELL</text><text x="1764" y="400">R-04</text>
+    </g>
+
+    <!-- Storage racks -->
+    <g transform="translate(1945 294)" fill="none" stroke="#afbdc9" stroke-opacity="0.62">
+      <rect width="300" height="112" stroke-width="2"/>
+      <path d="M50 0V112M100 0V112M150 0V112M200 0V112M250 0V112M0 37H300M0 74H300"/>
+      <path d="M8 8L42 29M58 45L92 66M108 82L142 104M158 8L192 29M208 45L242 66M258 82L292 104" opacity="0.65"/>
+    </g>
+    <text x="1947" y="284" fill="#a6b4c1" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="13" letter-spacing="2" opacity="0.72">BUFFER RACK / B-06</text>
+
+    <!-- Tank farm -->
+    <g transform="translate(815 604)" fill="none" stroke="#c7d2dc" stroke-opacity="0.68" stroke-width="2">
+      <path d="M0 0H470V246H0Z" stroke-dasharray="12 8"/>
+      <g>
+        <circle cx="90" cy="76" r="58"/><circle cx="90" cy="76" r="46"/><circle cx="90" cy="76" r="8"/>
+        <path d="M90 18V134M32 76H148" stroke-opacity="0.45"/>
+        <circle cx="235" cy="76" r="58"/><circle cx="235" cy="76" r="46"/><circle cx="235" cy="76" r="8"/>
+        <path d="M235 18V134M177 76H293" stroke-opacity="0.45"/>
+        <circle cx="380" cy="76" r="58"/><circle cx="380" cy="76" r="46"/><circle cx="380" cy="76" r="8"/>
+        <path d="M380 18V134M322 76H438" stroke-opacity="0.45"/>
+      </g>
+      <path d="M90 134V184H380V134M235 134V218M90 184H42V224H428V184H380"/>
+      <path d="M42 204H10M428 204H460" stroke-dasharray="6 5"/>
+    </g>
+    <g fill="#a6b4c1" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="13" letter-spacing="2" opacity="0.74">
+      <text x="817" y="594">PROCESS FLUIDS / TF-2</text><text x="879" y="686">T-21</text><text x="1024" y="686">T-22</text><text x="1169" y="686">T-23</text>
+    </g>
+
+    <!-- Assembly machines lower right -->
+    <g transform="translate(1496 611)" fill="none" stroke="#c8d3dd" stroke-opacity="0.68" stroke-width="2">
+      <path d="M0 0H328V220H0Z"/>
+      <path d="M22 22H306V198H22Z" stroke-dasharray="7 6"/>
+      <rect x="48" y="48" width="92" height="54"/><rect x="188" y="48" width="92" height="54"/>
+      <rect x="48" y="124" width="92" height="48"/><rect x="188" y="124" width="92" height="48"/>
+      <path d="M140 75H188M140 148H188M164 75V148"/>
+      <circle cx="164" cy="111" r="14"/>
+    </g>
+    <g transform="translate(1880 611)" fill="none" stroke="#c8d3dd" stroke-opacity="0.68" stroke-width="2">
+      <path d="M0 0H348V220H0Z"/>
+      <path d="M22 22H326V198H22Z" stroke-dasharray="7 6"/>
+      <path d="M56 48H292V90H56ZM56 130H292V172H56Z"/>
+      <circle cx="88" cy="69" r="13"/><circle cx="140" cy="69" r="13"/><circle cx="208" cy="69" r="13"/><circle cx="260" cy="69" r="13"/>
+      <path d="M88 90V130M140 90V130M208 90V130M260 90V130"/>
+    </g>
+    <g fill="#a6b4c1" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="13" letter-spacing="2" opacity="0.74">
+      <text x="1498" y="600">FINAL ASSEMBLY / A-12</text><text x="1882" y="600">INSPECTION / Q-08</text>
+    </g>
+
+    <!-- Utilities and pipe routes -->
+    <g fill="none" stroke="#8798a7" stroke-opacity="0.58" stroke-width="3">
+      <path d="M760 198H1034V246H1280V198H1570V242H1860V198H2268"/>
+      <path d="M760 211H1018V259H1296V211H1554V255H1876V211H2268"/>
+      <path d="M1302 850H1368V784H1462V850H2270"/>
+    </g>
+    <g fill="#0b1118" stroke="#9badbc" stroke-opacity="0.7" stroke-width="2">
+      <circle cx="1034" cy="246" r="7"/><circle cx="1280" cy="198" r="7"/><circle cx="1570" cy="242" r="7"/>
+      <circle cx="1860" cy="198" r="7"/><circle cx="1368" cy="784" r="7"/><circle cx="1462" cy="850" r="7"/>
+    </g>
+
+    <!-- Selected geometry -->
+    <g fill="none" stroke="#27d9ff" stroke-width="4" filter="url(#lineGlow)">
+      <path d="M1494 609H1826V833H1494Z"/>
+      <path d="M1518 633H1802V809H1518Z" stroke-width="2" stroke-dasharray="8 6"/>
+      <circle cx="1658" cy="721" r="20" stroke-width="2"/>
+    </g>
+    <g fill="#27d9ff">
+      <rect x="1487" y="602" width="14" height="14"/><rect x="1819" y="602" width="14" height="14"/>
+      <rect x="1487" y="826" width="14" height="14"/><rect x="1819" y="826" width="14" height="14"/>
+    </g>
+    <g fill="#27d9ff" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="12" font-weight="600" letter-spacing="1.5">
+      <text x="1510" y="854">SELECTED  ·  ASSEMBLY CELL A-12</text>
+    </g>
+
+    <!-- Proposed markup route -->
+    <g fill="none" stroke="#ff604d" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" filter="url(#softGlow)">
+      <path d="M790 490H940V550H1405V490H1660V552H2050V490H2250" marker-end="url(#routeArrow)"/>
+    </g>
+    <g fill="#ff604d" stroke="#071018" stroke-width="4">
+      <circle cx="790" cy="490" r="11"/><circle cx="1405" cy="490" r="11"/><circle cx="2050" cy="490" r="11"/>
+    </g>
+    <text x="1862" y="543" fill="#ff7a68" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="13" font-weight="600" letter-spacing="2">PROPOSED SERVICE ROUTE  R1</text>
+
+    <!-- Sparse dimensions -->
+    <g fill="none" stroke="#98a8b7" stroke-opacity="0.62" stroke-width="1.5" marker-start="url(#arrowGray)" marker-end="url(#arrowGray)">
+      <path d="M738 938H918M918 938H1116M1116 938H1314M1494 870H1826"/>
+      <path d="M2350 134V264M2350 264V420"/>
+    </g>
+    <g stroke="#98a8b7" stroke-opacity="0.48"><path d="M738 914V950M918 914V950M1116 914V950M1314 914V950M1494 846V882M1826 846V882"/></g>
+    <g fill="#9aaab8" font-family="Avenir Next, Helvetica Neue, sans-serif" font-size="12" letter-spacing="1.5" opacity="0.72">
+      <text x="797" y="932">9 200</text><text x="984" y="932">10 125</text><text x="1181" y="932">10 125</text>
+      <text x="1608" y="864">16 800</text><text x="2362" y="204" transform="rotate(90 2362 204)">6 600</text>
+    </g>
+  </g>
+
+  <!-- Editorial copy zone -->
+  <g font-family="Avenir Next, Helvetica Neue, sans-serif">
+    <g transform="translate(112 92)">
+      <rect width="272" height="38" rx="19" fill="#27d9ff" fill-opacity="0.1" stroke="#27d9ff" stroke-opacity="0.55"/>
+      <circle cx="22" cy="19" r="5" fill="#27d9ff" filter="url(#softGlow)"/>
+      <text x="39" y="24" fill="#bcefff" font-size="13" font-weight="700" letter-spacing="2.3">NATIVE CAD FOR MAC</text>
+    </g>
+    <text x="106" y="266" fill="#ffffff" font-size="116" font-weight="600" letter-spacing="-4">Your drawings.</text>
+    <text x="106" y="382" fill="#ffffff" font-size="116" font-weight="600" letter-spacing="-4">At Mac speed.</text>
+    <g transform="translate(112 450)">
+      <path d="M0 0H5V62H0ZM20 0H25V62H20Z" fill="#27d9ff"/>
+      <text x="52" y="37" fill="#ffffff" font-size="32" font-weight="700" letter-spacing="1">NovaCAD</text>
+    </g>
+    <text x="112" y="552" fill="#aebbc7" font-size="25" font-weight="400" letter-spacing="0.2">Open-source DWG &amp; DXF workspace for macOS.</text>
+    <g transform="translate(112 608)" fill="#71808e" font-size="12" font-weight="600" letter-spacing="2">
+      <text x="0" y="0">01  OPEN</text><path d="M88 -5H130" stroke="#354451"/>
+      <text x="146" y="0">02  INSPECT</text><path d="M258 -5H300" stroke="#354451"/>
+      <text x="316" y="0">03  MARK UP</text>
+    </g>
+  </g>
+
+  <!-- Floating partial ribbon -->
+  <g transform="translate(1020 44)" filter="url(#shadow)" font-family="Avenir Next, Helvetica Neue, sans-serif">
+    <path d="M18 0H925A18 18 0 0 1 943 18V91H0V18A18 18 0 0 1 18 0Z" fill="url(#ribbonGlass)" stroke="#72879a" stroke-opacity="0.26"/>
+    <path d="M0 90H943" stroke="#27d9ff" stroke-opacity="0.42"/>
+    <g transform="translate(26 19)">
+      <path d="M0 0H50V50H0Z" fill="#27d9ff" fill-opacity="0.1" stroke="#27d9ff" stroke-opacity="0.5"/>
+      <path d="M12 36V14H32L39 21V36ZM32 14V22H39" fill="none" stroke="#27d9ff" stroke-width="2"/>
+      <text x="0" y="67" fill="#7f919f" font-size="9" letter-spacing="1">OPEN</text>
+    </g>
+    <g transform="translate(110 17)" fill="none" stroke="#a5b4c1" stroke-width="2">
+      <path d="M0 8H44V52H0Z"/><path d="M11 40L32 19M23 18H33V28"/>
+      <path d="M68 8H112V52H68Z"/><circle cx="90" cy="30" r="10"/><path d="M90 14V20M90 40V46M74 30H80M100 30H106"/>
+      <path d="M136 8H180V52H136Z"/><path d="M146 42L170 18M146 18L170 42"/>
+    </g>
+    <g fill="#81929f" font-size="9" letter-spacing="1">
+      <text x="111" y="81">EXPORT</text><text x="179" y="81">SNAP</text><text x="250" y="81">MARKUP</text>
+    </g>
+    <path d="M326 13V76M577 13V76" stroke="#697c8c" stroke-opacity="0.3"/>
+    <g transform="translate(352 18)" fill="none" stroke="#aab8c4" stroke-width="2">
+      <path d="M0 34H46M23 11V57"/><circle cx="23" cy="34" r="17"/>
+      <path d="M76 13L118 55M76 55L118 13"/><path d="M144 55L165 13L186 55Z"/>
+    </g>
+    <g fill="#81929f" font-size="9" letter-spacing="1">
+      <text x="348" y="81">CROSSHAIR</text><text x="428" y="81">TRIM</text><text x="504" y="81">MEASURE</text>
+    </g>
+    <g transform="translate(607 18)">
+      <rect width="154" height="46" rx="6" fill="#05080c" fill-opacity="0.62" stroke="#75899a" stroke-opacity="0.32"/>
+      <circle cx="24" cy="23" r="7" fill="#27d9ff"/>
+      <text x="43" y="19" fill="#d8e2e9" font-size="11" font-weight="600">A-FLOORPLAN</text>
+      <text x="43" y="34" fill="#718290" font-size="9" letter-spacing="1">ACTIVE LAYER</text>
+    </g>
+    <g transform="translate(793 19)" fill="none" stroke="#9fadb9" stroke-width="2">
+      <circle cx="22" cy="22" r="19"/><path d="M22 10V34M10 22H34"/>
+      <rect x="62" y="3" width="42" height="38" rx="5"/><path d="M73 14H93M73 22H93M73 30H86"/>
+    </g>
+  </g>
+
+  <!-- Right layer surface -->
+  <g transform="translate(2110 156)" filter="url(#shadow)" font-family="Avenir Next, Helvetica Neue, sans-serif">
+    <path d="M18 0H327A18 18 0 0 1 345 18V330A18 18 0 0 1 327 348H0V18A18 18 0 0 1 18 0Z" fill="url(#panelGlass)" stroke="#718699" stroke-opacity="0.3"/>
+    <text x="24" y="34" fill="#dce5eb" font-size="13" font-weight="700" letter-spacing="2">LAYERS</text>
+    <text x="309" y="34" fill="#708391" font-size="16">•••</text>
+    <path d="M20 53H325" stroke="#6c7d8a" stroke-opacity="0.24"/>
+    <g font-size="12" fill="#bac6cf">
+      <g transform="translate(22 74)"><circle cx="8" cy="8" r="6" fill="#27d9ff"/><path d="M32 8H52" stroke="#27d9ff" stroke-width="3"/><text x="67" y="12">A-FLOORPLAN</text><text x="279" y="12" fill="#27d9ff">●</text></g>
+      <g transform="translate(22 118)"><circle cx="8" cy="8" r="6" fill="#ff604d"/><path d="M32 8H52" stroke="#ff604d" stroke-width="3"/><text x="67" y="12">M-ROUTE-PROP</text><text x="279" y="12" fill="#8293a1">○</text></g>
+      <g transform="translate(22 162)"><circle cx="8" cy="8" r="6" fill="#93a3b0"/><path d="M32 8H52" stroke="#93a3b0" stroke-width="2"/><text x="67" y="12">E-EQUIPMENT</text><text x="279" y="12" fill="#8293a1">●</text></g>
+      <g transform="translate(22 206)"><circle cx="8" cy="8" r="6" fill="#647583"/><path d="M32 8H52" stroke="#647583" stroke-width="2" stroke-dasharray="4 3"/><text x="67" y="12">S-GRID</text><text x="279" y="12" fill="#8293a1">●</text></g>
+      <g transform="translate(22 250)"><circle cx="8" cy="8" r="6" fill="#52616d"/><path d="M32 8H52" stroke="#8393a0" stroke-width="2"/><text x="67" y="12">P-UTILITIES</text><text x="279" y="12" fill="#8293a1">●</text></g>
+    </g>
+    <rect x="18" y="304" width="309" height="1" fill="#6c7d8a" fill-opacity="0.24"/>
+    <text x="24" y="329" fill="#728491" font-size="10" letter-spacing="1.4">5 VISIBLE  /  1 SELECTED</text>
+  </g>
+
+  <!-- Measurement surface -->
+  <g transform="translate(1544 673)" filter="url(#shadow)" font-family="Avenir Next, Helvetica Neue, sans-serif">
+    <path d="M16 0H343A16 16 0 0 1 359 16V124A16 16 0 0 1 343 140H0V16A16 16 0 0 1 16 0Z" fill="#0b141d" fill-opacity="0.96" stroke="#27d9ff" stroke-opacity="0.55"/>
+    <path d="M0 16A16 16 0 0 1 16 0H343A16 16 0 0 1 359 16V42H0Z" fill="#27d9ff" fill-opacity="0.1"/>
+    <text x="18" y="27" fill="#89eaff" font-size="10" font-weight="700" letter-spacing="2">LIVE MEASUREMENT</text>
+    <text x="20" y="86" fill="#ffffff" font-size="35" font-weight="600" letter-spacing="-0.5">16,800.00</text>
+    <text x="260" y="84" fill="#7f919e" font-size="12" letter-spacing="2">MM</text>
+    <text x="20" y="116" fill="#7f919e" font-size="10" letter-spacing="1.5">ΔX 16,800  ·  ΔY 0  ·  0°</text>
+  </g>
+
+  <!-- Command prompt -->
+  <g transform="translate(680 910)" filter="url(#shadow)" font-family="Avenir Next, Helvetica Neue, sans-serif">
+    <path d="M17 0H1090A17 17 0 0 1 1107 17V62H0V17A17 17 0 0 1 17 0Z" fill="#071018" fill-opacity="0.95" stroke="#708394" stroke-opacity="0.34"/>
+    <circle cx="27" cy="31" r="7" fill="#27d9ff" filter="url(#softGlow)"/>
+    <text x="48" y="35" fill="#8ceaff" font-size="13" font-weight="700" letter-spacing="1.5">COMMAND</text>
+    <text x="154" y="35" fill="#d8e2e9" font-size="14">Measure or type a command</text>
+    <path d="M142 16V46" stroke="#667987" stroke-opacity="0.48"/>
+    <rect x="1021" y="15" width="68" height="32" rx="6" fill="#15212b" stroke="#657785" stroke-opacity="0.35"/>
+    <text x="1041" y="36" fill="#8a9aa7" font-size="10" letter-spacing="1">ESC</text>
+  </g>
+
+  <!-- Bottom-right status controls -->
+  <g transform="translate(1820 910)" filter="url(#shadow)" font-family="Avenir Next, Helvetica Neue, sans-serif">
+    <path d="M0 0H562A16 16 0 0 1 578 16V62H0Z" fill="#0a121a" fill-opacity="0.93" stroke="#718494" stroke-opacity="0.3"/>
+    <g font-size="10" font-weight="700" letter-spacing="1.2">
+      <text x="22" y="35" fill="#27d9ff">SNAP</text><circle cx="73" cy="31" r="4" fill="#27d9ff"/>
+      <text x="96" y="35" fill="#81929f">ORTHO</text><circle cx="151" cy="31" r="4" fill="#465664"/>
+      <text x="176" y="35" fill="#27d9ff">GRID</text><circle cx="219" cy="31" r="4" fill="#27d9ff"/>
+      <text x="245" y="35" fill="#81929f">1:100</text>
+    </g>
+    <path d="M304 13V49" stroke="#657887" stroke-opacity="0.36"/>
+    <path d="M334 31H454" stroke="#687b8a" stroke-width="3"/><circle cx="409" cy="31" r="7" fill="#d9e3ea"/>
+    <text x="475" y="35" fill="#a5b3be" font-size="11" letter-spacing="1">82%</text>
+  </g>
+
+  <!-- Crosshair and drawing locator -->
+  <g transform="translate(1405 490)" stroke="#27d9ff" stroke-opacity="0.58" fill="none">
+    <circle r="18" stroke-width="1.5"/><path d="M-48 0H48M0-48V48" stroke-width="1"/>
+    <circle r="3" fill="#27d9ff" stroke="none"/>
+  </g>
+  <g transform="translate(2390 860)" font-family="Avenir Next, Helvetica Neue, sans-serif">
+    <circle r="38" fill="#081019" fill-opacity="0.9" stroke="#728594" stroke-opacity="0.42"/>
+    <path d="M0-25V25M-25 0H25" stroke="#8596a4"/>
+    <path d="M0-25L6-12H-6Z" fill="#27d9ff"/>
+    <text x="-5" y="-12" fill="#d6e1e8" font-size="10" font-weight="700">N</text>
+  </g>
+
+  <!-- Fine border -->
+  <rect x="1" y="1" width="2498" height="998" fill="none" stroke="#b9c8d4" stroke-opacity="0.12" stroke-width="2"/>
+</svg>
