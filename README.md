@@ -112,11 +112,11 @@ right-click → Open. The packaged build is Apple Silicon only.
 ### Homebrew
 
 ```sh
-brew install --cask ryandirezze/tap/novacad-mac
+brew install --cask ryandirezze/tap/novacad
 ```
 
-Homebrew auto-taps [`ryandirezze/tap`](https://github.com/ryandirezze/homebrew-tap)
-and installs only this app.
+Homebrew auto-taps [`ryandirezze/tap`](https://github.com/ryandirezze/homebrew-tap),
+auto-trusts only this cask, and installs only this app.
 
 ## Features
 
