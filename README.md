@@ -116,7 +116,10 @@ brew install --cask ryandirezze/tap/novacad
 ```
 
 Homebrew auto-taps [`ryandirezze/tap`](https://github.com/ryandirezze/homebrew-tap),
-auto-trusts only this cask, and installs only this app.
+auto-trusts only this cask, and installs only this app. The cask is bumped
+automatically with each release. It lives in this personal tap rather than
+Homebrew's official repository because official casks must be Apple-notarized,
+which requires a paid Developer ID.
 
 ## Features
 
