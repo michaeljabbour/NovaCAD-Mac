@@ -11,7 +11,8 @@ let package = Package(
     targets: [
         .target(
             name: "CADCore",
-            path: "Sources/CADCore"
+            path: "Sources/CADCore",
+            exclude: ["LICENSE-NOTICE.md"]
         ),
         .executableTarget(
             name: "DWGViewer",

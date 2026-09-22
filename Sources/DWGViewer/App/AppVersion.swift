@@ -19,7 +19,7 @@ import Foundation
 /// value, not a separate one, so the `.pkg` filename and the in-app version
 /// can never drift apart).
 enum AppVersion {
-    static let fallback = "1.2.3"
+    static let fallback = "1.2.4"
 
     /// `Scripts/build_app.sh` bakes this into the installed `.app`'s
     /// `Info.plist` as `CFBundleShortVersionString`. A bare `swift run`/

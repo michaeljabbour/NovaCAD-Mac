@@ -9,10 +9,12 @@ import XCTest
 @MainActor
 final class ExternalOpenRequestQueueTests: XCTestCase {
 
-    override func setUp() {
+    override func setUp() async throws {
         // The queue is a process-wide singleton; reset it so state from a
         // previous test (including its `hasDrainedOnce` latch) can't leak in.
-        ExternalOpenRequestQueue.shared.resetForTesting()
+        await MainActor.run {
+            ExternalOpenRequestQueue.shared.resetForTesting()
+        }
     }
 
     func testEnqueueBeforeAnyDrainIsBuffered() {

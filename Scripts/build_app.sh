@@ -11,6 +11,9 @@ BUNDLE_ID="com.novacad.app"
 INSTALL_DIR="${1:-/Applications}"
 APP="$INSTALL_DIR/$APP_NAME.app"
 
+echo "▸ Running tests…"
+swift test
+
 echo "▸ Building release binary…"
 swift build -c release --product "$APP_NAME"
 BIN="$(swift build -c release --product "$APP_NAME" --show-bin-path)/$APP_NAME"
@@ -75,15 +78,39 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>
-            <key>CFBundleTypeName</key><string>Drawing</string>
+            <key>CFBundleTypeName</key><string>CAD Drawing</string>
             <key>CFBundleTypeRole</key><string>Viewer</string>
+            <key>LSHandlerRank</key><string>Alternate</string>
             <key>LSItemContentTypes</key>
             <array>
                 <string>com.autodesk.dwg</string>
-                <string>public.item</string>
+                <string>com.autodesk.dxf</string>
             </array>
             <key>CFBundleTypeExtensions</key>
             <array><string>dxf</string><string>dwg</string></array>
+        </dict>
+    </array>
+    <key>UTImportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key><string>com.autodesk.dwg</string>
+            <key>UTTypeDescription</key><string>AutoCAD DWG Drawing</string>
+            <key>UTTypeConformsTo</key><array><string>public.data</string></array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key><array><string>dwg</string></array>
+                <key>public.mime-type</key><string>image/vnd.dwg</string>
+            </dict>
+        </dict>
+        <dict>
+            <key>UTTypeIdentifier</key><string>com.autodesk.dxf</string>
+            <key>UTTypeDescription</key><string>AutoCAD DXF Drawing</string>
+            <key>UTTypeConformsTo</key><array><string>public.data</string></array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key><array><string>dxf</string></array>
+                <key>public.mime-type</key><string>image/vnd.dxf</string>
+            </dict>
         </dict>
     </array>
 </dict>
@@ -91,6 +118,13 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 PLIST
 
 # Ad-hoc code signature so Gatekeeper lets it launch locally.
-codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
+codesign --force --deep --sign - "$APP"
+codesign --verify --deep --strict "$APP"
+
+# Register installed apps immediately so Finder offers Open With without a
+# logout/reboot. Do not register the temporary bundle used by build_pkg.sh.
+if [[ "$INSTALL_DIR" == "/Applications" || "$INSTALL_DIR" == "$HOME/Applications" ]]; then
+    /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP"
+fi
 
 echo "✓ Installed $APP"
