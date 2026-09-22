@@ -96,6 +96,9 @@ extension PackageLoader {
     static func loadIntoStore(url: URL,
                               isCancelled: (() -> Bool)? = nil,
                               xrefProgress: ((XrefProgress) -> Void)? = nil,
+                              drawingIndexer: (URL, Bool) -> [String: URL] = {
+                                  PackageLoader.drawingIndex(in: $0, recursive: $1)
+                              },
                               progress: ((Double) -> Void)? = nil) throws -> EditableParsedDocument {
         let fm = FileManager.default
         var mainURL = url
@@ -165,7 +168,10 @@ extension PackageLoader {
         let cacheBucket: URL? = (deepPackage && dwgCacheEnabled)
             ? DWGCache.bucket(forPackage: packageDir) : nil
 
-        var index = PackageLoader.drawingIndex(in: packageDir, recursive: deepPackage)
+        // Finder grants access to the selected file, not necessarily its
+        // parent folder. Avoid triggering a folder-access prompt for drawings
+        // that have no external references to resolve.
+        var index = deepPackage ? drawingIndexer(packageDir, true) : [:]
         if deepPackage {
             let hasDWGs = mainURL.pathExtension.lowercased() == "dwg"
                 || index.values.contains { $0.pathExtension.lowercased() == "dwg" }
@@ -203,6 +209,10 @@ extension PackageLoader {
             progress?(0.08 + p * 0.5)
         }
         try checkCancelled()
+
+        if !deepPackage, parsed.blocks.values.contains(where: { $0.isXref && $0.entityCount == 0 }) {
+            index = drawingIndexer(packageDir, false)
+        }
 
         var filesLoaded = 0
         var convertedCache: [String: URL] = [:]

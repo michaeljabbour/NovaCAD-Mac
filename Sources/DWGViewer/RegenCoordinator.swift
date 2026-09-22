@@ -312,7 +312,8 @@ final class RegenCoordinator {
                             xrefProgress: ((PackageLoader.XrefProgress) -> Void)? = nil,
                             progress: ((Double) -> Void)? = nil) throws -> RegenCoordinator {
         let parsed = try PackageLoader.loadIntoStore(url: url, isCancelled: isCancelled,
-                                                     xrefProgress: xrefProgress) { p in progress?(p * 0.85) }
+                                                    xrefProgress: xrefProgress,
+                                                    progress: { p in progress?(p * 0.85) })
         MarkupStore.ensureMarkupLayer(in: parsed)
         let doc = Regenerator.build(from: parsed, parseSeconds: 0) { p in progress?(0.85 + p * 0.15) }
         return RegenCoordinator(parsed: parsed, document: doc)

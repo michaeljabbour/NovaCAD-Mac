@@ -106,6 +106,8 @@ fewer DWG versions and is less faithful than the ODA converter.
 The install script registers NovaCAD for `.dwg` and `.dxf` files, so you can
 right-click a drawing and choose **Open With → NovaCAD** immediately. DWG
 still requires the separate [converter setup](#dwg-files); DXF opens directly.
+Self-contained drawings open without scanning their parent folder. NovaCAD
+indexes sibling drawings only when it needs to resolve external references.
 
 Prebuilt installers are attached to
 [Releases](https://github.com/ryandirezze/NovaCAD-Mac/releases/latest). The
