@@ -177,6 +177,8 @@ public enum GeometryBuilder {
             }
         }
 
+        let recoverOrphanBlocks = !model.isEmpty || paper.isEmpty
+
         // Blocks with real geometry that are never INSERTed anywhere still render:
         // layout DXFs exported from xref-composed DWGs frequently carry the whole
         // plant inside such definitions (the placement INSERTs are lost in export,
@@ -186,7 +188,7 @@ public enum GeometryBuilder {
         // percentile fit, not by hiding content.
         for (name, b) in raw.blocks.sorted(by: { $0.key < $1.key }) {
             guard !b.entities.isEmpty, insertCounts[name] == nil,
-                  !b.isXrefDependent else { continue }
+                  !b.isXrefDependent, recoverOrphanBlocks || b.isXref else { continue }
             let upper = name.uppercased()
             guard !upper.hasPrefix("*"), !upper.hasPrefix("$") else { continue }
             var ins = InsertRaw()
@@ -501,8 +503,9 @@ public enum GeometryBuilder {
                     item.mirroredX = false
                 }
                 a.texts.append(item)
-                // Rough bounds contribution for fit-to-view.
-                a.addBoundsPoint(item.position)
+                let textBounds = item.worldBounds
+                a.addBoundsPoint(CGPoint(x: textBounds.minX, y: textBounds.minY))
+                a.addBoundsPoint(CGPoint(x: textBounds.maxX, y: textBounds.maxY))
 
             case .insert:
                 break // handled in walk()

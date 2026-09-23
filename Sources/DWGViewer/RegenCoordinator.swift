@@ -256,9 +256,11 @@ final class RegenCoordinator {
             xrefIdByBlock[name] = xrefCount
             xrefCount += 1
         }
+        let recoverOrphanBlocks = Regenerator.recoversOrphanBlocks(in: parsed)
         var table: [Int32: (base: CGPoint, xrefId: Int16)] = [:]
         for (name, b) in parsed.blocks {
-            guard b.entityCount > 0, insertCounts[name] == nil, !b.isXrefDependent else { continue }
+            guard b.entityCount > 0, insertCounts[name] == nil, !b.isXrefDependent,
+                  recoverOrphanBlocks || b.isXref else { continue }
             let upper = name.uppercased()
             guard !upper.hasPrefix("*"), !upper.hasPrefix("$") else { continue }
             table[b.blockIndex] = (base: b.base, xrefId: xrefIdByBlock[name] ?? -1)

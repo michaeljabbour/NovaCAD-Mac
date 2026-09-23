@@ -902,6 +902,7 @@ public struct DXFParser {
             t.hAlign = (attach - 1) % 3
             t.vAlign = [3, 2, 1][min(max((attach - 1) / 3, 0), 2)]
             t.text = MTextParser.plainText(from: rawStr)
+            t.text = TextLayout.wrap(t.text, height: CGFloat(t.height), width: CGFloat(d(41) ?? 0))
             guard !t.text.isEmpty, t.height > 0 else { return nil }
             return ([.text(t)], .mtext)
 

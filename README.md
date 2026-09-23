@@ -184,11 +184,12 @@ which requires a paid Developer ID.
   entity counts, and search in original names or local English aliases for
   common Russian CAD terms. Select multiple rows to show, hide, or isolate
   them together; Restore returns to the visibility state before isolation.
-  **Drawing labels → English** also applies to block pickers, properties,
-  and search results. Original names are available on hover and in Original
-  mode; the display preference does not rename identifiers in the drawing.
-- **Paper sheets** — choose one named layout from the Sheet menu beside
-  Model/Paper; other sheets stay separate and are retained when saving.
+  Common Russian names receive automatic English display aliases in block
+  pickers, properties, and search; originals remain available on hover.
+  There is no language switch on the canvas. Display aliases do not translate
+  or rename the file itself.
+- **Paper sheets** — choose one named layout from the Sheet menu beneath the ribbon,
+  or step through sheets with Previous/Next; other sheets stay separate and are retained when saving.
   The empty External References panel no longer takes space from the layers.
 - **External References pane** — show/hide each xref, flag unresolved ones,
   attach new xrefs, re-point missing xref paths, and open an xref in a new
@@ -429,3 +430,17 @@ sponsored by Autodesk, Inc. AutoCAD and DWG are trademarks of Autodesk, Inc.
 ODA File Converter is a product of the Open Design Alliance. Apple and macOS
 are trademarks of Apple Inc. All other trademarks are the property of their
 respective owners.
+
+### Workspace navigation and rendering
+
+Search lives above the canvas and automatically centers and outlines its first
+match. Previous/Next and the results menu navigate other matches. Units, Quality,
+Drawing Info, and Issues open as panels contained within the workspace. The AI
+Assistant docks beside the canvas by default; floating remains optional.
+
+MTEXT respects its reference width, and Fit Drawing includes full rotated text
+bounds. Paper-only files with empty Model space no longer show unused block
+schedules as overlapping model geometry; the unused definitions remain in the
+file. Legacy orphan-block recovery remains available for model exports and xrefs.
+Mixed coordinate and annotation units are explained in Issues and Units & Format;
+annotation labels never change the measurement scale.

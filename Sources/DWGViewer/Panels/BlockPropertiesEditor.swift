@@ -36,7 +36,7 @@ import SwiftUI
 ///   same point, which is almost never what's wanted (MOVE with a delta is
 ///   the right tool for that, and already exists).
 struct BlockPropertiesEditor: View {
-    @AppStorage("layerNamesInEnglish") private var englishNames = true
+    private let englishNames = true
     @ObservedObject var session: DocumentSession
     let insertId: EntityID
     /// Units/precision for displaying and parsing the geometry fields — the

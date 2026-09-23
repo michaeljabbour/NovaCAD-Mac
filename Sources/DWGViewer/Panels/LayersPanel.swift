@@ -74,7 +74,7 @@ struct LayersPanel: View {
     @State private var isAddingLayer = false
     @State private var newLayerName = ""
     @State private var xrefSearch = ""
-    @AppStorage("layerNamesInEnglish") private var englishNames = true
+    private let englishNames = true
     @State private var isolation = LayerIsolationState()
     /// The layer whose "Select Color" dialog is currently presented (its
     /// `DXFLayer.id`), or nil when no color picker is open. `Identifiable`
@@ -412,28 +412,18 @@ struct LayersPanel: View {
             .padding(.top, 8)
             .padding(.bottom, 4)
 
-            HStack {
-                Text("Drawing labels").font(.caption).foregroundColor(.secondary)
-                Spacer()
-                Picker("Drawing labels", selection: $englishNames) {
-                    Text("English").tag(true)
-                    Text("Original").tag(false)
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .frame(width: 165)
-                .help("English names in layer and block controls; original names remain available in tooltips and Original mode")
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-
-            SearchField(text: $layerSearch, prompt: "Search English or original names")
+            SearchField(text: $layerSearch, prompt: "Search layers")
                 .padding(.horizontal, 10)
                 .padding(.bottom, 6)
 
             Toggle("Only layers on this \(space == .paper ? "sheet" : "model")", isOn: $currentSheetOnly)
                 .font(.caption).toggleStyle(.checkbox)
                 .padding(.horizontal, 10).padding(.bottom, 6)
+            Text("\(sheetUsage.count) on this \(space == .paper ? "sheet" : "model") · \(doc.layers.filter { $0.entityCount > 0 }.count) used in drawing")
+                .font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 10)
+            if let markup = doc.layers.first(where: { $0.name == "NOVACAD-MARKUP" }), sheetUsage[markup.id] == nil {
+                Text("Markup layer has no objects here").font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 10)
+            }
             layerActions(doc: doc)
 
             if isAddingLayer {
@@ -478,9 +468,6 @@ struct LayersPanel: View {
                 selectedLayerIds.formIntersection(Set(stillPresent))
             }
 
-            clayerPicker(doc: doc)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
         }
     }
 
@@ -497,11 +484,11 @@ struct LayersPanel: View {
                 }
             }
             HStack(spacing: 6) {
-                Button("Show") { visibility.hiddenLayerIds.subtract(targets) }
+                Button("Show \(targets.count)") { visibility.hiddenLayerIds.subtract(targets) }
                     .disabled(targets.isEmpty)
-                Button("Hide") { visibility.hiddenLayerIds.formUnion(targets) }
+                Button("Hide \(targets.count)") { visibility.hiddenLayerIds.formUnion(targets) }
                     .disabled(targets.isEmpty)
-                Button("Isolate") {
+                Button("Isolate \(targets.count)") {
                     isolation.isolate(targets, allLayerIDs: Set(doc.layers.map(\.id)),
                                       hidden: &visibility.hiddenLayerIds)
                 }
@@ -560,15 +547,16 @@ struct LayersPanel: View {
                 // separate transparency indicator.
                 ZStack {
                     if layer.transparency > 0 { rowCheckerboard }
-                    RoundedRectangle(cornerRadius: 3)
+                    Circle()
                         .fill(Color(rgb: layer.color.swatchDisplayRGB(darkBackground: colorScheme == .dark)).opacity(1 - layer.transparency / 100))
                 }
                 .frame(width: 14, height: 14)
-                .clipShape(RoundedRectangle(cornerRadius: 3))
-                .overlay(RoundedRectangle(cornerRadius: 3)
+                .clipShape(Circle())
+                .overlay(Circle()
                     .strokeBorder(Color.primary.opacity(0.2), lineWidth: 0.5))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Color for \(displayName(layer))")
             .help(layer.transparency > 0
                   ? "\(Int(layer.transparency.rounded()))% transparent — click for Layer Settings"
                   : "Click for Layer Settings (color, transparency)")
@@ -591,13 +579,17 @@ struct LayersPanel: View {
         }
         .padding(.leading, 4)
         .padding(.vertical, 4)
-        .background(isRowSelected ? Color.accentColor.opacity(0.12) : Color.clear)
+        .background(isRowSelected ? Color.accentColor.opacity(0.30) : Color.clear)
+        .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(isRowSelected ? Color.accentColor : .clear, lineWidth: 1.5))
         .cornerRadius(4)
         .contentShape(Rectangle())
-        .onTapGesture {
-            handleLayerClick(layer)
-        }
-        .onTapGesture(count: 2) {
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(displayName(layer))
+        .accessibilityValue(isRowSelected ? "Selected" : "Not selected")
+        .accessibilityAddTraits(isRowSelected ? .isSelected : [])
+        .accessibilityAction(named: "Select layer") { handleLayerClick(layer) }
+        .simultaneousGesture(TapGesture(count: 1).onEnded { handleLayerClick(layer) })
+        .simultaneousGesture(TapGesture(count: 2).onEnded {
             // Double-click: isolate this layer, preserving the previous view.
             guard let doc = document else { return }
             let others = Set(doc.layers.map(\.id)).subtracting([layer.id])
@@ -607,7 +599,7 @@ struct LayersPanel: View {
                 isolation.isolate([layer.id], allLayerIDs: Set(doc.layers.map(\.id)),
                                   hidden: &visibility.hiddenLayerIds)
             }
-        }
+        })
         .contextMenu {
             Button("Isolate Layer") {
                 guard let doc = document else { return }

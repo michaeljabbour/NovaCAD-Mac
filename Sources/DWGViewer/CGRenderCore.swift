@@ -544,14 +544,9 @@ enum CGRenderCore {
         }
 
         func addText(_ t: TextItem) {
-            let sc = t.position.applying(worldToBitmap)
-            let capPx = max(t.height * zoomPx, 4 * bs)
-            let lines = t.text.components(separatedBy: "\n")
-            let maxChars = lines.reduce(1) { max($0, $1.count) }
-            let w = CGFloat(maxChars) * capPx * 0.75 * max(t.widthFactor, 0.1)
-            path.addRect(CGRect(x: sc.x - 2 * bs, y: sc.y - 2 * bs,
-                                width: w + 4 * bs,
-                                height: capPx * CGFloat(lines.count) * 5 / 3 + 4 * bs))
+            let box = t.worldBounds.applying(worldToBitmap).insetBy(dx: -2 * bs, dy: -2 * bs)
+            path.addRect(box)
+
         }
 
         func addPoint(_ pt: CGPoint) {

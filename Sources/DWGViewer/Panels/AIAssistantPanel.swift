@@ -213,7 +213,7 @@ struct AIAssistantPanel: View {
                         Text("Ask about the drawing, e.g. \u{201c}What layers are on this drawing?\u{201d} "
                              + "or \u{201c}Rename the workstation labeled STN-4 to match its label text.\u{201d}")
                             .font(.callout)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.primary)
                             .padding(10)
                     }
                     ForEach(aiSession.history) { entry in

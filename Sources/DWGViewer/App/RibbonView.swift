@@ -26,7 +26,8 @@ struct RibbonView<Extras: View>: View {
                         selectedTab = item.rawValue
                     } label: {
                         Text(item.rawValue).font(.system(size: 13, weight: tab == item ? .semibold : .regular))
-                            .padding(.horizontal, 14).frame(height: 34)
+                            .padding(.horizontal, 14).frame(minWidth: 68, minHeight: 34)
+                            .contentShape(Rectangle())
                             .foregroundStyle(tab == item ? Color.accentColor : .primary)
                             .background(tab == item ? Color.accentColor.opacity(0.08) : .clear)
                             .overlay(alignment: .bottom) {
@@ -52,12 +53,11 @@ struct RibbonView<Extras: View>: View {
                         switch tab {
                         case .home:
                             group("Clipboard", names: ["PASTECLIP", "COPYCLIP"])
-                            group("Draw", names: ["SEL", "LINE", "PLINE", "CIRCLE"], compact: geometry.size.width < 1120)
-                            group("Edit", names: ["MOVE", "COPY", "ROTATE", "ERASE"], compact: geometry.size.width < 1120)
+                            group("Selection", names: ["SEL"])
                         case .draw:
                             group("Shapes", names: ["LINE", "PLINE", "CIRCLE", "ARC", "RECTANGLE", "POLYGON"], compact: geometry.size.width < 800)
                             group("Curves & surfaces", names: ["ELLIPSE", "POINT", "SPLINE", "SPLINECV", "3DFACE", "REGION"], compact: geometry.size.width < 1320)
-                            group("Blocks", names: ["BLOCK", "INSERT", "ATTDEF", "ATTEDIT"], compact: geometry.size.width < 1320)
+                            group("Blocks", names: ["BLOCK", "INSERT", "ATTDEF"], compact: geometry.size.width < 1320)
                         case .modify:
                             group("Transform", names: ["MOVE", "COPY", "ROTATE", "SCALE", "MIRROR", "STRETCH"], compact: geometry.size.width < 800)
                             group("Refine", names: ["TRIM", "EXTEND", "FILLET", "CHAMFER", "OFFSET", "JOIN"], compact: geometry.size.width < 1320)

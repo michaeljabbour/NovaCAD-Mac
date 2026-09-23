@@ -9,7 +9,7 @@ import SwiftUI
 /// private state directly. Shown when the current selection is NOT markup
 /// (see `MarkupPropertiesPanel` below for the editable markup counterpart).
 struct PropertiesPanel: View {
-    @AppStorage("layerNamesInEnglish") private var englishNames = true
+    private let englishNames = true
     @ObservedObject var session: DocumentSession
     let document: DXFDocument?
     let selectionCount: Int

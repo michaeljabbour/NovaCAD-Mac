@@ -48,6 +48,13 @@ struct CommandDispatch {
     /// with no further user interaction; see `ContentView
     /// .pasteAtOriginalCoordinates`'s own doc comment.
     var pasteAtOriginalCoordinates: () -> Void
+    var showUnits: () -> Void = {}
+    var toggleLayers: () -> Void = {}
+    var showInfo: () -> Void = {}
+    var showSearch: () -> Void = {}
+    var toggleAssistant: () -> Void = {}
+    var zoomIn: () -> Void = {}
+    var zoomOut: () -> Void = {}
 }
 
 private struct CommandDispatchKey: FocusedValueKey {
@@ -84,83 +91,47 @@ struct MainMenuCommands: Commands {
     var body: some Commands {
         CommandMenu("Draw") {
             menuItems(for: .draw)
-        }
-        CommandMenu("Modify") {
-            menuItems(for: .modify)
-        }
-        CommandMenu("Insert") {
+            Divider()
             menuItems(for: .insert)
         }
+        CommandMenu("Modify") { menuItems(for: .modify) }
         CommandMenu("Format") {
+            Button("Layers Sidebar") { dispatch?.toggleLayers() }
             menuItems(for: .format)
+            Button("Units & Format…") { dispatch?.showUnits() }.disabled(!ready)
         }
-        CommandMenu("Dimension") {
-            menuItems(for: .dimension)
-        }
-        // NOTE: no top-level "Tools" CommandMenu — `MenuPath.tools` exists in
-        // the enum for future use (matching the plan's named menu list) but
-        // no CommandSpec currently sets it (grep-confirmed: every command
-        // that would conceptually be "Tools" — SEL, ZOOM, DISTANCE/AREA/
-        // RADIUS/ANGLE — was categorized under .edit/.view/.dimension
-        // instead, since those are more specific/accurate AutoCAD-menu
-        // analogues). An always-empty CommandMenu would be a confusing dead
-        // menu item, so it's omitted until some future command actually
-        // claims `.tools`.
-        // Edit/View below AUGMENT the system-provided Edit/View menus
-        // (SwiftUI merges `CommandGroup(after:)` content into the existing
-        // native menu of that name) rather than building brand-new top-level
-        // menus — matches native macOS app conventions (every app has
-        // exactly one File/Edit/View menu).
-        //
-        // Shared File actions own their standard keyboard shortcuts.
+        CommandMenu("Dimension") { menuItems(for: .dimension) }
         CommandGroup(replacing: .newItem) { FileMenuItems(dispatch: fileDispatch) }
         CommandGroup(replacing: .saveItem) { }
         CommandGroup(replacing: .undoRedo) {
-            // `replacing:`, not `after:` — this app has no `NSUndoManager`
-            // wired into the responder chain (it has its own bespoke
-            // `EditableDocument.undoStack`/`redoStack`), so SwiftUI's
-            // automatically-injected system Undo/Redo placeholder items at
-            // the `.undoRedo` anchor would sit permanently disabled; using
-            // `after:` left those dead placeholders in the Edit menu right
-            // next to this real, working Undo item, i.e. two "Undo"-looking
-            // entries, one of them dead weight (found by adversarial
-            // review). `replacing:` removes them; the two lines below
-            // becomes the ONLY Undo/Redo content in the Edit menu.
-            menuItems(for: .edit)
-            // Redo has no `CommandSpec`/`CommandAction` of its own (see
-            // `CommandDispatch.performRedo`'s doc comment — there has never
-            // been a typed "REDO" command-bar token) — wired directly here
-            // exactly like `RibbonView`'s own Redo button.
-            Button("Redo  (⇧⌘Z)") {
-                dispatch?.performRedo()
-            }
-            .disabled(!(dispatch?.canRedo ?? false))
+            Button("Undo") {
+                if isTextFieldFirstResponder { NSApp.sendAction(Selector(("undo:")), to: nil, from: nil) }
+                else { dispatch?.perform(.undo) }
+            }.keyboardShortcut("z", modifiers: .command)
+                .disabled(!isTextFieldFirstResponder && !(dispatch?.canUndo ?? false))
+            Button("Redo") {
+                if isTextFieldFirstResponder { NSApp.sendAction(Selector(("redo:")), to: nil, from: nil) }
+                else { dispatch?.performRedo() }
+            }.keyboardShortcut("z", modifiers: [.command, .shift])
+                .disabled(!isTextFieldFirstResponder && !(dispatch?.canRedo ?? false))
         }
         CommandGroup(after: .toolbar) {
             Divider()
             Button(ribbonCollapsed ? "Show Ribbon" : "Hide Ribbon") { ribbonCollapsed.toggle() }
                 .keyboardShortcut("r", modifiers: [.command, .option])
-            menuItems(for: .view)
+            Button("Layers Sidebar") { dispatch?.toggleLayers() }
+            Button("AI Assistant") { dispatch?.toggleAssistant() }.disabled(!ready)
+            Divider()
+            Button("Fit Drawing") { dispatch?.perform(.zoomFit) }
+                .keyboardShortcut("0", modifiers: .command).disabled(!ready)
+            Button("Zoom In") { dispatch?.zoomIn() }.keyboardShortcut("+", modifiers: .command).disabled(!ready)
+            Button("Zoom Out") { dispatch?.zoomOut() }.keyboardShortcut("-", modifiers: .command).disabled(!ready)
+            Button("Find in Drawing…") { dispatch?.showSearch() }.keyboardShortcut("f", modifiers: .command).disabled(!ready)
+            Button("Drawing Info…") { dispatch?.showInfo() }.disabled(!ready)
         }
-        // Cross-drawing Copy/Paste (new feature). `replacing: .pasteboard`
-        // removes SwiftUI's own always-disabled system Copy/Paste/Cut/
-        // SelectAll placeholders at this anchor (present, per this
-        // feature's own research phase, simply because nothing had ever
-        // claimed them before) and puts the app's real Copy/Paste here
-        // instead — same "replace, don't just augment, a dead placeholder
-        // group" precedent as the `.undoRedo` replacement above.
-        //
-        // Text-field focus conflict (flagged during this feature's design):
-        // when a native `TextField` (command bar, search box, AI Assistant
-        // input, attribute editor) is first responder, ⌘C/⌘V should copy/
-        // paste TEXT in that field, not the canvas selection. `isTextFieldFirstResponder`
-        // checks the ACTUAL AppKit first responder and, when true, forwards
-        // to `NSApp.sendAction(_:to:from:)`'s standard `copy(_:)`/`paste(_:)`
-        // selectors — letting the focused field's own native text-editing
-        // handle the shortcut exactly as if no custom menu item existed —
-        // rather than running the canvas Copy/Paste logic underneath a
-        // focused text field.
         CommandGroup(replacing: .pasteboard) {
+            Button("Cut") { NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: nil) }
+                .keyboardShortcut("x", modifiers: .command).disabled(!isTextFieldFirstResponder)
             Button("Copy") {
                 if isTextFieldFirstResponder {
                     NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil)
@@ -185,6 +156,10 @@ struct MainMenuCommands: Commands {
                 dispatch?.pasteAtOriginalCoordinates()
             }
             .disabled(isTextFieldFirstResponder || !(ready && (dispatch?.canPaste() ?? false)))
+            Divider()
+            Button("Select All Text") { NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) }
+                .keyboardShortcut("a", modifiers: .command).disabled(!isTextFieldFirstResponder)
+            Button("Select Mode") { dispatch?.perform(.selectMode) }.disabled(!ready)
         }
     }
 
@@ -208,15 +183,9 @@ struct MainMenuCommands: Commands {
         }
     }
 
-    /// "Name  (Alias)" when a short alias exists, matching the existing
-    /// toolbar Menu's own "Label  (KEY)" convention (e.g. "Move  (M)") —
-    /// reusing that exact display convention rather than inventing a new one.
-    private func menuTitle(_ spec: CommandSpec) -> String {
-        guard let shortAlias = spec.aliases.first(where: { $0.count <= 3 }) else {
-            return spec.desc
-        }
-        return "\(spec.desc)  (\(shortAlias))"
-    }
+    /// CAD aliases remain in command completion and tooltips; menu titles
+    /// contain labels only so native keyboard shortcuts align correctly.
+    private func menuTitle(_ spec: CommandSpec) -> String { spec.desc }
 
     /// Mirrors the toolbar Menu's bespoke per-button disabled-state rules
     /// (see ContentView.swift's toolbar `Menu` block) for the handful of

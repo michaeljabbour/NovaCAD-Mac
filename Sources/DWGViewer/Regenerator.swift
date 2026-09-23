@@ -18,6 +18,20 @@ import CoreGraphics
 /// is an additive parallel path, not a replacement.
 enum Regenerator {
 
+    /// Keep full regeneration and incremental block edits on the same recovery
+    /// rule. Paper-only drawings can contain unused schedules at local origins.
+    static func recoversOrphanBlocks(in parsed: EditableParsedDocument) -> Bool {
+        let hasModelContent = parsed.store.headers.contains { $0.owner.isModel && !$0.flags.contains(.deleted) }
+            || parsed.blocks.contains { name, block in
+                let upper = name.uppercased()
+                return block.entityCount > 0 && (upper.hasPrefix("*MODEL_SPACE") || upper == "$MODEL_SPACE")
+            }
+        if hasModelContent { return true }
+        let hasPaperContent = parsed.store.headers.contains { $0.owner.isPaper && !$0.flags.contains(.deleted) }
+            || parsed.blocks.contains { $0.key.uppercased().hasPrefix("*PAPER_SPACE") && $0.value.entityCount > 0 }
+        return !hasPaperContent
+    }
+
     private struct Ctx {
         var t = CGAffineTransform.identity
         var scale: CGFloat = 1
@@ -447,7 +461,8 @@ enum Regenerator {
                 let mp = store.mtexts[pIdx]
                 position = mp.insertion; height = mp.height; rotation = mp.rotationDeg
                 widthFactor = 1
-                text = store.strings.string(for: mp.stringId)
+                text = TextLayout.wrap(store.strings.string(for: mp.stringId),
+                                       height: CGFloat(mp.height), width: CGFloat(mp.refWidth))
                 let attach = Int(mp.attachPoint)
                 hAlign = (attach - 1) % 3
                 vAlign = [3, 2, 1][min(max((attach - 1) / 3, 0), 2)]
@@ -495,7 +510,9 @@ enum Regenerator {
                 item.mirroredX = false
             }
             a.texts.append(item)
-            a.addBoundsPoint(item.position)
+            let textBounds = item.worldBounds
+            a.addBoundsPoint(CGPoint(x: textBounds.minX, y: textBounds.minY))
+            a.addBoundsPoint(CGPoint(x: textBounds.maxX, y: textBounds.maxY))
 
         case .insert, .dimension:
             break // handled by the caller's walk over INSERT/DIMENSION (insert-like expansion), not renderable geometry itself
@@ -978,9 +995,11 @@ enum Regenerator {
         // ---- Orphan-block synthetic roots (load-bearing; see GeometryBuilder) ----
         // A block with real geometry that nothing INSERTs anywhere still
         // renders, as a synthetic top-level insert at its own base point.
+        let recoverOrphanBlocks = recoversOrphanBlocks(in: parsed)
         var syntheticRoots: [(name: String, base: CGPoint)] = []
         for (name, b) in parsed.blocks.sorted(by: { $0.key < $1.key }) {
-            guard b.entityCount > 0, insertCounts[name] == nil, !b.isXrefDependent else { continue }
+            guard b.entityCount > 0, insertCounts[name] == nil, !b.isXrefDependent,
+                  recoverOrphanBlocks || b.isXref else { continue }
             let upper = name.uppercased()
             guard !upper.hasPrefix("*"), !upper.hasPrefix("$") else { continue }
             syntheticRoots.append((name, b.base))

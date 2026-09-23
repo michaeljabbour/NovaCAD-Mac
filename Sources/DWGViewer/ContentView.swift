@@ -10,7 +10,7 @@ enum SpaceSelection: String, CaseIterable, Identifiable {
 }
 
 struct ContentView: View {
-    @AppStorage("layerNamesInEnglish") private var englishNames = true
+    private let englishNames = true
     /// Owns the document, view transform, selection, tool, and markup state
     /// for the one drawing this view is showing (relocated from what used to
     /// be ContentView's own @State — see DocumentSession.swift). One
@@ -40,7 +40,7 @@ struct ContentView: View {
 
     @State private var isImporterPresented = false
     @State private var layerSearch = ""
-    @State private var showFileInfo = false
+    @State private var inspector: WorkspaceInspector?
     /// AI Assistant panel visibility — a plain per-view `@State` (not
     /// `DocumentSession`) since it's pure UI chrome (like
     /// `propertiesMinimized`), not conversation state that needs to survive
@@ -48,13 +48,8 @@ struct ContentView: View {
     /// survives via `session.aiAssistant` instead — see `DocumentSession`'s
     /// own doc comment on that field).
     @State private var showAIAssistant = false
-    /// Whether the AI Assistant is presented as a movable/resizable FLOATING
-    /// glass panel over the drawing (the default) or DOCKED as a trailing
-    /// sidebar alongside the Properties panels. Same "pure UI chrome, per
-    /// view" rationale as `showAIAssistant` above. Floating is the default per
-    /// explicit product decision: the assistant is a conversation ABOUT the
-    /// drawing, and docking it permanently narrows the canvas.
-    @State private var aiAssistantFloating = true
+    /// Docked by default so the drawing stays visible beside the conversation.
+    @State private var aiAssistantFloating = false
     /// Where the floating panel currently sits/how big it is. Held here (not
     /// inside `FloatingAIAssistantPanel`) so a float -> dock -> float round
     /// trip returns the panel to where the user last put it rather than
@@ -63,7 +58,7 @@ struct ContentView: View {
     @State private var aiAssistantFrame: FloatingPanelFrame?
 
     @State private var propertiesMinimized = false
-    @State private var showUnitsPopover = false
+
 
     @State private var eraseCandidate: EntityID? = nil
     /// Backs the command bar's text-entry experience (autocomplete, ghost
@@ -403,6 +398,7 @@ struct ContentView: View {
         VStack(spacing: 0) {
         RibbonView(dispatch: commandDispatch, activeAction: activeRibbonAction,
                    activeToolLabel: currentToolLabel, extras: ribbonExtras)
+        workspaceStrip
         NavigationSplitView(columnVisibility: $sidebarVisibility) {
             LayersPanel(
                 document: document,
@@ -427,6 +423,7 @@ struct ContentView: View {
                 .navigationSplitViewColumnWidth(min: 300, ideal: 370, max: 560)
         } detail: {
             VStack(spacing: 0) {
+                if searchVisible && document != nil { searchBar }
                 HStack(spacing: 0) {
                     drawingArea
                     if !selectedMarkupIDs.isEmpty {
@@ -476,17 +473,9 @@ struct ContentView: View {
                     }
                 }
                 StatusBarView(settings: settings, document: document, isLoading: isLoading,
-                              space: Binding(get: { space }, set: { space = $0 }),
-                              onSpaceChanged: handleSpaceChanged,
-                              paperLayouts: regen?.parsed.paperLayouts ?? [],
-                              activePaperLayoutID: regen?.parsed.activePaperLayoutID,
-                              onSelectPaperLayout: { id in
-                                  regen?.selectPaperLayout(id)
-                                  session.objectWillChange.send()
-                                  handleSpaceChanged()
-                                  session.persistWorkspace()
-                              }, recoveryStatus: session.workspaceError ?? session.recoveryStatus,
-                              onLocateImages: locateImagesFolder)
+                              recoveryStatus: session.workspaceError ?? session.recoveryStatus,
+                              issueCount: drawingIssues.count,
+                              onShowIssues: { inspector = .issues }, onShowQuality: { inspector = .quality })
                 if document != nil { commandBar }
             }
         }
@@ -496,12 +485,12 @@ struct ContentView: View {
             ToolbarItem(placement: .principal) { documentTitle }
             ToolbarItemGroup(placement: .primaryAction) {
                 Button(action: toggleSearch) { Image(systemName: "magnifyingglass") }
-                    .keyboardShortcut("f", modifiers: .command)
                     .help("Find text and blocks (⌘F)").accessibilityLabel("Find in drawing")
                     .disabled(document == nil || isLoading)
                 assistantToggle
             }
         }
+        .overlay(alignment: .bottomTrailing) { inspectorCard }
         .frame(minWidth: 1000, minHeight: 650)
         .fileImporter(
             isPresented: $isImporterPresented,
@@ -676,7 +665,12 @@ struct ContentView: View {
             canUndo: session.canUndo,
             canRedo: session.canRedo,
             canPaste: { PasteboardSnapshot.read(from: .general) != nil },
-            pasteAtOriginalCoordinates: { pasteAtOriginalCoordinates() }
+            pasteAtOriginalCoordinates: { pasteAtOriginalCoordinates() },
+            showUnits: { inspector = .units },
+            toggleLayers: { sidebarVisibility = sidebarVisibility == .detailOnly ? .all : .detailOnly },
+            showInfo: { inspector = .info }, showSearch: toggleSearch,
+            toggleAssistant: { showAIAssistant.toggle() },
+            zoomIn: { zoomAtCenter(by: 1.7) }, zoomOut: { zoomAtCenter(by: 0.59) }
         )
     }
 
@@ -766,10 +760,8 @@ struct ContentView: View {
                 .help("Save (⌘S)").accessibilityLabel("Save")
                 .disabled(document == nil || isLoading)
             Button(action: undoLast) { Image(systemName: "arrow.uturn.backward") }
-                .keyboardShortcut("z", modifiers: .command)
                 .help("Undo (⌘Z)").accessibilityLabel("Undo").disabled(!session.canUndo)
             Button { session.redo() } label: { Image(systemName: "arrow.uturn.forward") }
-                .keyboardShortcut("z", modifiers: [.command, .shift])
                 .help("Redo (⇧⌘Z)").accessibilityLabel("Redo").disabled(!session.canRedo)
         }.buttonStyle(.borderless).controlSize(.regular)
     }
@@ -1010,37 +1002,47 @@ struct ContentView: View {
 
     }
 
+    private var workspaceStrip: some View {
+        HStack(spacing: 12) {
+            SheetNavigationView(space: Binding(get: { space }, set: { space = $0 }),
+                sheets: regen?.parsed.paperLayouts ?? [], activeID: regen?.parsed.activePaperLayoutID,
+                onSpaceChanged: handleSpaceChanged, onSelect: selectPaperSheet)
+            Spacer(minLength: 0)
+            Picker("Current layer", selection: $session.currentProperties.layerName) {
+                if let doc = document {
+                    ForEach(doc.layers, id: \.name) { layer in
+                        Text(LayerDisplayName.display(layer.name, inEnglish: englishNames)).tag(layer.name)
+                    }
+                }
+            }.frame(maxWidth: 220).help("Layer for new geometry")
+            markupColorMenu
+        }
+        .disabled(document == nil || isLoading)
+        .padding(.horizontal, 12).padding(.vertical, 6)
+        .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    private func selectPaperSheet(_ id: UInt64) {
+        regen?.selectPaperLayout(id)
+        session.objectWillChange.send()
+        handleSpaceChanged()
+        session.persistWorkspace()
+        if searchVisible { runSearch() }
+    }
+
     @ViewBuilder
     private func ribbonExtras(_ tab: RibbonTab) -> some View {
         switch tab {
         case .home:
-            RibbonGroup(title: "Navigate") {
+            RibbonGroup(title: "Workspace") {
                 VStack(alignment: .leading, spacing: 3) {
-                    Button(action: fitButtonPressed) { Label("Fit drawing", systemImage: "arrow.up.left.and.arrow.down.right") }
-                    Button { setMeasure(.distance) } label: { Label("Measure", systemImage: "ruler") }
+                    Button { showAIAssistant.toggle() } label: { Label("AI Assistant", systemImage: "sparkles") }
+                    Button(action: toggleSearch) { Label("Find in drawing", systemImage: "magnifyingglass") }
                 }.buttonStyle(RibbonButtonStyle()).disabled(document == nil || isLoading)
             }
-            RibbonGroup(title: "Tools") {
-                VStack(alignment: .leading, spacing: 6) {
-                    allToolsMenu
-                    markupColorMenu
-                }.frame(minWidth: 110, alignment: .leading)
-            }
-        case .draw, .modify:
-            RibbonGroup(title: "Properties") {
-                VStack(alignment: .leading, spacing: 6) {
-                    Button { startClayerEntry() } label: { Label("Current layer", systemImage: "square.3.layers.3d") }
-                        .buttonStyle(RibbonButtonStyle()).disabled(document == nil || isLoading)
-                    markupColorMenu
-                }.frame(minWidth: 120, alignment: .leading)
-            }
-        case .annotate:
-            RibbonGroup(title: "Format") {
-                VStack(alignment: .leading, spacing: 3) {
-                    unitsButton
-                    markupColorMenu
-                }.frame(minWidth: 125, alignment: .leading)
-            }
+        case .draw:
+            RibbonGroup(title: "More tools") { allToolsMenu }
+        case .modify, .annotate: EmptyView()
         case .view:
             RibbonGroup(title: "Zoom") {
                 VStack(alignment: .leading, spacing: 3) {
@@ -1060,27 +1062,49 @@ struct ContentView: View {
             RibbonGroup(title: "Drawing") {
                 VStack(alignment: .leading, spacing: 3) {
                     unitsButton
-                    if let doc = document {
-                        Button { showFileInfo.toggle() } label: { Label("Drawing info", systemImage: "info.circle") }
-                            .buttonStyle(RibbonButtonStyle())
-                            .popover(isPresented: $showFileInfo) { fileInfoPopover(doc) }
-                    }
-                }
-            }
-            RibbonGroup(title: "Share") {
-                VStack(alignment: .leading, spacing: 3) {
-                    Button { showingPDFExport = true } label: { Label("Export PDF", systemImage: "doc.richtext") }
-                    Button(action: saveDrawingAs) { Label("Save As…", systemImage: "square.and.arrow.down.on.square") }
+                    Button { inspector = .info } label: { Label("Drawing info", systemImage: "info.circle") }
                 }.buttonStyle(RibbonButtonStyle()).disabled(document == nil || isLoading)
             }
         }
     }
 
     private var unitsButton: some View {
-        Button { showUnitsPopover.toggle() } label: { Label("Units & format", systemImage: "ruler.fill") }
-            .buttonStyle(RibbonButtonStyle())
-            .popover(isPresented: $showUnitsPopover) { unitsPopover }
-            .disabled(document == nil || isLoading)
+        Button { inspector = .units } label: { Label("Units & format", systemImage: "ruler.fill") }
+            .buttonStyle(RibbonButtonStyle()).disabled(document == nil || isLoading)
+    }
+
+    private var unitNotice: String? { document.flatMap { DrawingDiagnostics.unitNotice(in: $0) } }
+    private var drawingIssues: [String] { (document?.renderingWarnings ?? []) + [unitNotice].compactMap { $0 } }
+
+    @ViewBuilder private var inspectorCard: some View {
+        if let inspector {
+            WorkspaceInspectorCard(title: inspector.rawValue, onClose: { self.inspector = nil }) {
+                switch inspector {
+                case .units: unitsPopover
+                case .info: if let doc = document { fileInfoPopover(doc) }
+                case .issues:
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 12) {
+                            ForEach(drawingIssues, id: \.self) { issue in
+                                Text(issue).font(.callout).fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+                            }
+                        }
+                    }.frame(height: min(300, CGFloat(drawingIssues.count) * 95))
+                    Button("Locate Images Folder…", action: locateImagesFolder)
+                case .quality:
+                    Picker("Rendering quality", selection: $settings.renderQuality) {
+                        Text("1 — Fastest").tag(1)
+                        Text("2 — Fast").tag(2)
+                        Text("3 — Balanced (recommended)").tag(3)
+                        Text("4 — Fine").tag(4)
+                        Text("5 — Highest detail").tag(5)
+                    }.pickerStyle(.radioGroup).labelsHidden()
+                    Text("Higher detail can slow redraws on large drawings.").font(.caption).foregroundStyle(.secondary)
+                    Button("Reset to Default") { settings.renderQuality = 3 }
+                }
+            }
+        }
     }
 
     private var activeRibbonAction: CommandAction? {
@@ -1111,7 +1135,6 @@ struct ContentView: View {
 
     private var unitsPopover: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Units & Format").font(.headline)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("Length format").font(.caption).foregroundColor(.secondary)
@@ -1126,7 +1149,7 @@ struct ContentView: View {
                 Picker("", selection: $settings.unitSystemRaw) {
                     ForEach(UnitSystem.allCases) { Text($0.label).tag($0.rawValue) }
                 }
-                .pickerStyle(.segmented).labelsHidden().frame(width: 220)
+                .pickerStyle(.menu).labelsHidden().frame(maxWidth: .infinity)
                 .disabled(currentFormat.style.isFeetInches)
                 if currentFormat.style.isFeetInches {
                     Text("Architectural/Engineering always use feet & inches.")
@@ -1140,7 +1163,12 @@ struct ContentView: View {
                 Text(frac ? "Smallest fraction: 1/\(1 << min(max(unitPrecision,0),6))"
                           : "Decimal places: \(min(max(unitPrecision,0),8))")
                     .font(.caption).foregroundColor(.secondary)
-                Stepper("", value: $settings.unitPrecision, in: 0...8).labelsHidden()
+                HStack(spacing: 6) {
+                    TextField("Decimal places", value: Binding(get: { settings.unitPrecision },
+                        set: { settings.unitPrecision = min(max($0, 0), frac ? 6 : 8) }), format: .number)
+                        .textFieldStyle(.roundedBorder).frame(width: 55)
+                    Stepper("Precision", value: $settings.unitPrecision, in: 0...(frac ? 6 : 8)).labelsHidden()
+                }
             }
 
             if let doc = document {
@@ -1148,6 +1176,7 @@ struct ContentView: View {
                      : "Drawing units: \(doc.unitsLabel)")
                     .font(.caption2).foregroundColor(.secondary)
             }
+            if let unitNotice { Text(unitNotice).font(.caption).fixedSize(horizontal: false, vertical: true) }
             HStack {
                 Text("Example:").font(.caption).foregroundColor(.secondary)
                 Text(currentFormat.length(66.5)).font(.caption).bold()
@@ -1155,15 +1184,15 @@ struct ContentView: View {
             Button("Reset") { unitSystemRaw = UnitSystem.asDrawn.rawValue
                 lengthStyleRaw = LengthStyle.decimal.rawValue; unitPrecision = 2 }
         }
-        .padding(14)
-        .frame(width: 250)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func fileInfoPopover(_ doc: DXFDocument) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("File statistics").font(.headline)
             Text("Entities rendered: \(doc.stats.totalEntities)")
-            Text("Layers used: \(doc.layers.filter { $0.entityCount > 0 }.count) of \(doc.layers.count)")
+            Text("Layers used in drawing: \(doc.layers.filter { $0.entityCount > 0 }.count) of \(doc.layers.count)")
+            Text("Layers on this \(space == .paper ? "sheet" : "model"): \(session.currentLayerUsage.count)")
             Text("Render groups: \(doc.modelGroups.count) model, \(doc.paperGroups.count) paper")
             Text(String(format: "Parse: %.1fs · Geometry: %.1fs",
                         doc.stats.parseSeconds, doc.stats.buildSeconds))
@@ -1300,8 +1329,17 @@ struct ContentView: View {
                     }
                 }
             }
-            .overlay(alignment: .top) {
-                if searchVisible && document != nil { searchBar }
+            .overlay {
+                if !isLoading, space == .model, let doc = document,
+                   doc.modelGroups.isEmpty, doc.modelImages.isEmpty {
+                    VStack(spacing: 10) {
+                        Text("Model space is empty").font(.headline)
+                        if let layouts = regen?.parsed.paperLayouts, !layouts.isEmpty {
+                            Text("This drawing contains \(layouts.count) paper sheets.").foregroundStyle(.secondary)
+                            Button("Show Paper Sheets") { space = .paper; handleSpaceChanged() }
+                        }
+                    }.padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+                }
             }
             .overlay {
                 if isLoading {
@@ -1370,6 +1408,7 @@ struct ContentView: View {
                 let hadSize = viewSize.width > 1
                 viewSize = newSize
                 if let saved = session.pendingWorkspace { _ = session.restoreWorkspace(saved) }
+                else if searchVisible, searchResults.indices.contains(searchCursor) { performGoTo(hit: searchResults[searchCursor]) }
                 else if !hadSize { fitToView() }
             }
         }
@@ -1395,8 +1434,12 @@ struct ContentView: View {
     }
 
     private func runSearch() {
+        if let doc = document, searchIndex?.documentID != ObjectIdentifier(doc) {
+            searchIndex = SearchIndex(document: doc, store: regen?.parsed.store)
+        }
         searchResults = searchIndex?.search(searchQuery) ?? []
-        searchCursor = -1
+        searchCursor = searchResults.isEmpty ? -1 : 0
+        if let first = searchResults.first { goTo(hit: first) }
     }
 
     private func nextHit(_ direction: Int = 1) {
@@ -1445,7 +1488,7 @@ struct ContentView: View {
         animateViewport(toZoom: targetZoom, pan: targetPan)
         halo = SearchHalo(position: hit.position,
                           worldRadius: hit.screenHeightHint * 1.6,
-                          until: Date().addingTimeInterval(1.5))
+                          until: Date().addingTimeInterval(3), bounds: hit.bounds)
     }
 
     private func animateViewport(toZoom targetZoom: CGFloat, pan targetPan: CGSize,
@@ -1482,7 +1525,18 @@ struct ContentView: View {
                     Button { nextHit(-1) } label: { Image(systemName: "chevron.up") }
                         .buttonStyle(.plain)
                     Button { nextHit(1) } label: { Image(systemName: "chevron.down") }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.plain).accessibilityLabel("Next search match")
+                    Menu {
+                        ForEach(searchResults) { hit in
+                            Button(hit.label) {
+                                searchCursor = searchResults.firstIndex(of: hit) ?? 0
+                                goTo(hit: hit)
+                            }
+                        }
+                    } label: {
+                        Text(searchResults[max(0, searchCursor)].label).lineLimit(1).truncationMode(.tail)
+                    }.frame(maxWidth: 300)
+
                 } else if searchQuery.count >= 2 {
                     Text("No matches").font(.caption).foregroundColor(.secondary)
                 }
@@ -1494,34 +1548,7 @@ struct ContentView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
 
-            if !searchResults.isEmpty && searchCursor < 0 {
-                Divider()
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(searchResults.prefix(8)) { hit in
-                        Button {
-                            searchCursor = searchResults.firstIndex(of: hit) ?? 0
-                            goTo(hit: hit)
-                        } label: {
-                            HStack {
-                                Text(LayerDisplayName.display(hit.label, inEnglish: englishNames)).lineLimit(1)
-                                Spacer()
-                                Text(LayerDisplayName.display(hit.sublabel, inEnglish: englishNames))
-                                    .font(.caption2).foregroundColor(.secondary)
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 4)
-                    }
-                    if searchResults.count > 8 {
-                        Text("… \(searchResults.count - 8) more — press ⏎ to step through")
-                            .font(.caption2).foregroundColor(.secondary)
-                            .padding(.horizontal, 12).padding(.vertical, 4)
-                    }
-                }
-                .padding(.bottom, 6)
-            }
+
         }
         .background(.regularMaterial)
         .cornerRadius(10)
@@ -1610,7 +1637,7 @@ struct ContentView: View {
         } else if let pending = pendingSetVar {
             return "Enter new value for \(pending) <\(sysVarDisplay(pending))>: "
         } else {
-            return commandMessage.isEmpty ? "Command (L, PL, C, A, REC, M, E, DI, AREA, Z — or x,y / @dx,dy / length)" : commandMessage
+            return commandMessage.isEmpty ? "Command (L, PL, C, A, REC, M, E, DI, AA, Z — or x,y / @dx,dy / length)" : commandMessage
         }
     }
 
@@ -6766,17 +6793,8 @@ struct ContentView: View {
         fit(to: bounds)
     }
 
-    /// Fit: frames the main content; pressing Fit again while already fitted
-    /// zooms out to the true full extents (including stray faraway content).
-    private func fitButtonPressed() {
-        let primaryZoom = fitZoom(for: bounds)
-        if abs(zoom - primaryZoom) / max(primaryZoom, 1e-12) < 0.01,
-           fullBounds != bounds {
-            fit(to: fullBounds)
-        } else {
-            fit(to: bounds)
-        }
-    }
+    /// Fit always includes all rendered content, including complete text bounds.
+    private func fitButtonPressed() { fit(to: fullBounds) }
 
     private func fitZoom(for target: CGRect) -> CGFloat {
         guard target.width > 0, target.height > 0,
