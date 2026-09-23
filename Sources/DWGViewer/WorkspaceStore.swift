@@ -24,6 +24,7 @@ struct WorkspaceRecord: Codable {
     var resourceDirectories: [URL]?
     var lastView: DrawingWorkspace?
     var presets: [WorkspacePreset] = []
+    var sheetViewports: [String: DrawingViewport]?
 }
 
 /// Small per-file view records; no drawing data or translated identifiers.

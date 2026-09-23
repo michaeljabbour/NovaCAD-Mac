@@ -518,7 +518,7 @@ struct LayersPanel: View {
             } label: {
                 Image(systemName: isOn ? "eye.fill" : "eye.slash")
                     .foregroundColor(isOn ? .accentColor : .secondary)
-                    .frame(width: 16)
+                    .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -531,7 +531,7 @@ struct LayersPanel: View {
             } label: {
                 Image(systemName: isLocked ? "lock.fill" : "lock.open")
                     .foregroundColor(isLocked ? .orange : .secondary.opacity(0.5))
-                    .frame(width: 14)
+                    .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -556,6 +556,7 @@ struct LayersPanel: View {
                 .clipShape(Circle())
                 .overlay(Circle()
                     .strokeBorder(Color.primary.opacity(0.2), lineWidth: 0.5))
+                .frame(width: 24, height: 24).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Color for \(displayName(layer))")
@@ -589,6 +590,7 @@ struct LayersPanel: View {
         .accessibilityLabel(displayName(layer))
         .accessibilityValue(isRowSelected ? "Selected" : "Not selected")
         .accessibilityAddTraits(isRowSelected ? .isSelected : [])
+        .accessibilityAction { handleLayerClick(layer) }
         .accessibilityAction(named: "Select layer") { handleLayerClick(layer) }
         .simultaneousGesture(TapGesture(count: 1).onEnded { handleLayerClick(layer) })
         .simultaneousGesture(TapGesture(count: 2).onEnded {

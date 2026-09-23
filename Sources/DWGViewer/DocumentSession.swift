@@ -51,6 +51,8 @@ final class DocumentSession: ObservableObject {
     @Published var recoveryStatus = ""
     @Published var workspaceError: String?
     var pendingWorkspace: DrawingWorkspace?
+    var sheetViewports: [String: DrawingViewport] = [:]
+    var searchOrigin: SearchOrigin?
     var pendingRecovery: RecoveryEntry?
     var savedRevision: UInt64 = 0
     var lastRecoveryRevision: UInt64?

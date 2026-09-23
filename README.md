@@ -294,10 +294,17 @@ paper sheet. This selects paper space and the editable renderer automatically.
 
 ### Workspace navigation and rendering
 
-Search lives above the canvas and automatically centers and outlines its first
-match. Previous/Next and the results menu navigate other matches. Units, Quality,
-Drawing Info, and Issues open as panels contained within the workspace. The AI
-Assistant docks beside the canvas by default; floating remains optional.
+Search lives above the canvas and frames each match at 28% of the available view,
+with its surroundings visible. Closing search restores the prior view. Each sheet
+and Model space remembers its own zoom and center. Empty layouts (including layouts
+with only the default paper viewport) stay in the file but are omitted from sheet
+counts and Previous/Next navigation.
+
+Units, Quality, Drawing Info, and Issues open beside their buttons inside the
+workspace, above the status bar. Properties and AI Assistant share a single
+sidebar with two tabs; the last selected tab is remembered. Layer visibility,
+lock and color controls, sheet arrows and the ribbon toggle have at least 24-point
+click targets, and layer rows expose a default accessibility selection action.
 
 MTEXT respects its reference width, and Fit Drawing includes full rotated text
 bounds. Paper-only files with empty Model space no longer show unused block

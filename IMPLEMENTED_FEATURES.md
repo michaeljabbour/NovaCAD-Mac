@@ -111,11 +111,14 @@ Known rendering/export limits are documented in README.md.
 [-] **Plot settings** — not exposed (Lock/Freeze are)
 
 ## Workspace ergonomics
-[X] **Contained inspectors** — Issues, Quality, Units and Drawing Info stay inside the window; precision includes a numeric field
-[X] **Sheet navigation** — Model/Paper, named sheet, Previous/Next and sheet count beneath the ribbon
+[X] **Anchored inspectors** — Issues, Quality, Units and Drawing Info open beside their triggers inside the window, above the status bar; precision includes a numeric field
+[X] **Sheet navigation** — Model/Paper, named sheet, Previous/Next and sheet count beneath the ribbon; empty layouts excluded without changing the file; separate saved cameras for each sheet and Model
 [X] **Fixed properties strip** — current layer and markup color appear once, independent of the active ribbon tab
-[X] **Search navigation** — automatic first-match centering, outline highlight and a results menu above the canvas
+[X] **Search navigation** — automatic first-match framing at 28% of the canvas, outline highlight and a results menu above the canvas; closing search restores the prior camera
 [X] **Native editing menus** — real Mac Undo/Redo/Copy/Paste/Find/Zoom shortcuts, no duplicate clipboard entries
 [X] **Text extents** — MTEXT reference-width wrapping with shared rendering, fitting and selection metrics
 [X] **Paper-only model handling** — unused block definitions no longer masquerade as Model-space tables
 [X] **Unit notices** — distinguish coordinate units from mixed-unit annotation labels
+
+[X] **Tabbed inspector sidebar** — Properties and AI Assistant share one panel and remember the selected tab
+[X] **Accessible layer selection** — selected state and default press action, plus separate eye, lock and color controls with 24-point targets

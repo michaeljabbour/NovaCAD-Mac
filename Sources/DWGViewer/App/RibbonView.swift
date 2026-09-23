@@ -42,6 +42,7 @@ struct RibbonView<Extras: View>: View {
                 Button { collapsed.toggle() } label: {
                     Image(systemName: collapsed ? "chevron.down" : "chevron.up")
                         .frame(width: 30, height: 30)
+                        .contentShape(Rectangle())
                 }.buttonStyle(.plain)
                     .help(collapsed ? "Expand ribbon (⌥⌘R)" : "Collapse ribbon for more drawing space (⌥⌘R)")
                     .accessibilityLabel(collapsed ? "Expand ribbon" : "Collapse ribbon")
@@ -138,7 +139,7 @@ struct RibbonView<Extras: View>: View {
             }.frame(minWidth: 58, minHeight: 61)
         }
         .buttonStyle(RibbonButtonStyle(selected: activeAction == spec.action))
-        .help("\(spec.desc)\(spec.aliases.first.map { "  (\($0))" } ?? "")")
+        .help("\(spec.desc)\(spec.aliases.first.map { "  (\($0))" } ?? "  (\(spec.name))")")
         .accessibilityLabel(Self.title(for: spec))
         .accessibilityAddTraits(activeAction == spec.action ? .isSelected : [])
         .disabled(!isEnabled(spec))
@@ -150,7 +151,7 @@ struct RibbonView<Extras: View>: View {
                 .frame(minWidth: 76, alignment: .leading)
         }
         .buttonStyle(RibbonButtonStyle(selected: activeAction == spec.action))
-        .help("\(spec.desc)\(spec.aliases.first.map { "  (\($0))" } ?? "")")
+        .help("\(spec.desc)\(spec.aliases.first.map { "  (\($0))" } ?? "  (\(spec.name))")")
         .accessibilityAddTraits(activeAction == spec.action ? .isSelected : [])
         .disabled(!isEnabled(spec))
     }
