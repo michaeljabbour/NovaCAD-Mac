@@ -12,6 +12,15 @@ struct DrawingViewport: Codable, Equatable {
         Self(zoom: zoom, centerX: bounds.midX + (size.width / 2 - pan.width) / zoom,
              centerY: bounds.midY - (size.height / 2 - pan.height) / zoom)
     }
+    /// The unobscured canvas rectangle in drawing coordinates (Y points up).
+    func visibleBounds(size: CGSize) -> CGRect? {
+        guard zoom.isFinite, zoom > 0, centerX.isFinite, centerY.isFinite,
+              size.width.isFinite, size.height.isFinite, size.width > 1, size.height > 1 else { return nil }
+        let width = size.width / zoom, height = size.height / zoom
+        guard width.isFinite, height.isFinite else { return nil }
+        return CGRect(x: centerX - width / 2, y: centerY - height / 2, width: width, height: height)
+    }
+
     func pan(in size: CGSize, bounds: CGRect) -> CGSize {
         CGSize(width: size.width / 2 + (bounds.midX - centerX) * zoom,
                height: size.height / 2 - (bounds.midY - centerY) * zoom)
@@ -20,6 +29,22 @@ struct DrawingViewport: Codable, Equatable {
         let zoom = bounds.width > 0 && bounds.height > 0 && size.width > 0 && size.height > 0
             ? min(size.width / bounds.width, size.height / bounds.height) * 0.92 : 1
         return Self(zoom: zoom, centerX: bounds.midX, centerY: bounds.midY)
+    }
+
+    /// A fitted drawing follows the available canvas; a manually positioned
+    /// camera keeps its scale and world center when a panel opens or closes.
+    func resized(from oldSize: CGSize, to newSize: CGSize, fitBounds: [CGRect]) -> Self {
+        guard oldSize.width > 0, oldSize.height > 0, newSize.width > 0, newSize.height > 0 else { return self }
+        for bounds in fitBounds where bounds.width > 0 && bounds.height > 0 {
+            let fitted = Self.fitted(to: bounds, size: oldSize)
+            // Restored views can differ by a few pixels after toolbar metrics
+            // change. Treat an otherwise centered view within 1% as fitted.
+            let sameScale = abs(zoom - fitted.zoom) <= max(1e-9, fitted.zoom * 0.01)
+            let sameCenter = abs(centerX - fitted.centerX) * zoom <= 1
+                && abs(centerY - fitted.centerY) * zoom <= 1
+            if sameScale && sameCenter { return Self.fitted(to: bounds, size: newSize) }
+        }
+        return self
     }
 }
 
@@ -82,5 +107,20 @@ struct SearchOrigin {
         selection = origin.selection
         restoreViewport(origin.viewport)
         objectWillChange.send()
+    }
+}
+
+/// Priority of camera restoration when the canvas changes size. Kept outside
+/// the view so a pending restore cannot accidentally lose to search or first fit.
+enum CanvasResizeAction: Equatable {
+    case waitForSize, restoreWorkspace, frameSearchMatch, initialFit, resizeViewport
+
+    static func decide(previous: CGSize, next: CGSize, hasPendingWorkspace: Bool,
+                       searchVisible: Bool, hasSearchMatch: Bool) -> Self {
+        guard next.width > 1, next.height > 1 else { return .waitForSize }
+        if hasPendingWorkspace { return .restoreWorkspace }
+        if searchVisible && hasSearchMatch { return .frameSearchMatch }
+        if previous.width <= 1 || previous.height <= 1 { return .initialFit }
+        return .resizeViewport
     }
 }

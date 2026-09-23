@@ -7,10 +7,11 @@ final class SheetNavigationContentTests: XCTestCase {
         let regen = try RegenCoordinator.loadPackage(url: TestFixtures.url("multiple_layouts.dxf"))
         let sheet = try XCTUnwrap(regen.parsed.paperLayouts.first)
         let store = regen.parsed.store
+        let ownership = PaperLayoutOwnership(regen.parsed)
         let blocks = Set(sheet.blockNames.compactMap { regen.parsed.blocks[$0]?.blockIndex })
         let tx = regen.parsed.document.begin("Empty sheet fixture")
         for (i, h) in store.headers.enumerated() where
-            blocks.contains(h.owner.raw) || (h.owner.isPaper && sheet.contains(EntityID(raw: Int32(i)), in: store)) {
+            blocks.contains(h.owner.raw) || (h.owner.isPaper && sheet.contains(EntityID(raw: Int32(i)), in: store, ownership: ownership)) {
             tx.delete(EntityID(raw: Int32(i)))
         }
         let added = tx.add(EntityPrototype(type: .viewport, layerId: 0, owner: .paper,
@@ -126,6 +127,45 @@ final class SheetViewportMemoryTests: XCTestCase {
         let restored = try JSONDecoder().decode(WorkspaceRecord.self, from: JSONEncoder().encode(record))
         XCTAssertEqual(restored.sheetViewports, views)
         XCTAssertNil(try JSONDecoder().decode(WorkspaceRecord.self, from: Data(#"{"presets":[]}"#.utf8)).sheetViewports)
+    }
+}
+
+final class ViewportResizeTests: XCTestCase {
+    func testFitFollowsPanelOpenAndCloseIncludingTitleBlockExtents() {
+        let drawing = CGRect(x: 100, y: 200, width: 500, height: 250)
+        let withTitleBlock = CGRect(x: 100, y: 200, width: 700, height: 400)
+        let fullSize = CGSize(width: 1200, height: 800)
+        let withPanel = CGSize(width: 900, height: 800)
+        for target in [drawing, withTitleBlock] {
+            let original = DrawingViewport.fitted(to: target, size: fullSize)
+            let resized = original.resized(from: fullSize, to: withPanel, fitBounds: [withTitleBlock, drawing])
+            XCTAssertEqual(resized, .fitted(to: target, size: withPanel))
+            XCTAssertLessThanOrEqual(target.width * resized.zoom, withPanel.width)
+            XCTAssertLessThanOrEqual(target.height * resized.zoom, withPanel.height)
+            XCTAssertEqual(resized.resized(from: withPanel, to: fullSize, fitBounds: [withTitleBlock, drawing]), original)
+        }
+    }
+
+    func testManualZoomAndPanSurvivePanelResize() {
+        let bounds = CGRect(x: -100, y: 80, width: 600, height: 300)
+        let oldSize = CGSize(width: 1200, height: 800)
+        let newSize = CGSize(width: 900, height: 800)
+        let fitted = DrawingViewport.fitted(to: bounds, size: oldSize)
+        let zoomed = DrawingViewport(zoom: fitted.zoom * 1.7, centerX: fitted.centerX, centerY: fitted.centerY)
+        let panned = DrawingViewport(zoom: fitted.zoom, centerX: fitted.centerX + 20, centerY: fitted.centerY - 30)
+        for manual in [zoomed, panned] {
+            XCTAssertEqual(manual.resized(from: oldSize, to: newSize, fitBounds: [bounds]), manual)
+        }
+    }
+
+    func testRestoredFitToleratesSmallToolbarSizeChanges() {
+        let bounds = CGRect(x: 100, y: 200, width: 700, height: 400)
+        let oldSize = CGSize(width: 1200, height: 700)
+        let newSize = CGSize(width: 900, height: 700)
+        var restored = DrawingViewport.fitted(to: bounds, size: oldSize)
+        restored.zoom *= 1.005
+        XCTAssertEqual(restored.resized(from: oldSize, to: newSize, fitBounds: [bounds]),
+                       .fitted(to: bounds, size: newSize))
     }
 }
 

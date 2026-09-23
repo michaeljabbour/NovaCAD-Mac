@@ -1,5 +1,10 @@
 # Non-Destructive Original Entity Editing Design
 
+> Historical proposal, not the current save implementation. NovaCAD now edits
+> the live entity store through undoable transactions and writes the complete
+> document with `DocumentDXFWriter`. DWG inputs save to DXF; their source DWG is
+> not rewritten. See [README.md](README.md#save--export) for current behavior.
+
 ## 1. Overview & Goals
 When editing legacy CAD drawings, altering the original AutoCAD entity tables directly carries severe risks of file corruption and invalidation of structural metadata. To solve this, NovaCAD adopts a **non-destructive additive design override system**.
 

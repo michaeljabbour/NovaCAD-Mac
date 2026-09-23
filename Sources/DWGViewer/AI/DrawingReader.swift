@@ -229,7 +229,7 @@ enum DrawingReader {
     }
 }
 
-private extension EntityKind {
+extension EntityKind {
     /// Machine-stable type name for `EntitySummary.type` — distinct from
     /// `.label` (a display string, e.g. "3D Face", not a stable identifier).
     var novaCADTypeName: String {
