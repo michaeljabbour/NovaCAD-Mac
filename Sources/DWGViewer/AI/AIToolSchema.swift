@@ -229,7 +229,8 @@ enum AIToolSchema {
             name: "propose_explode_block",
             description: "Stage ungrouping directly editable curves from ONE local block instance, with Apply and Undo. Notes, fills, unsupported curves and nested blocks remain grouped in a private remainder block. Other instances of the original block are unchanged. Use when target geometry is inside a block: find the containing root insert with query_entities(types:[insert],visibleOnly:true), explain unpacking, then stage this tool. After the user applies, re-query and inspect the new object IDs before proposing geometry edits. Supports simple uniformly scaled 2D blocks; reports unsupported metadata/display properties rather than discarding them.",
             inputSchema: JSONSchema(properties: [
-                "entityId": Property(type: "integer", description: "Root block instance ID on the active sheet/space, from query_entities or selection.")
+                "entityId": Property(type: "integer", description: "Root block instance ID on the active sheet/space, from query_entities or selection."),
+                "curveEntityIdsJSON": Property(type: "string", description: "JSON array of the specific curve IDs to ungroup, from query_entities. Prefer this for a particular wall/panels; all other curves remain grouped. Maximum 64 curves. Omit only to ungroup all editable curves in a small block (64 or fewer).")
             ], required: ["entityId"])
         ),
         Tool(

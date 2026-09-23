@@ -116,10 +116,10 @@ final class AIToolExecutor {
             }
             return try exportCSV(datasetJSON: dataset, filename: arguments["filename"] as? String)
         case "get_insert_attributes":
-            guard let raw = intArgument(arguments["insertEntityId"]) else {
+            guard let raw = intArgument(arguments["insertEntityId"]), let id = Int32(exactly: raw) else {
                 throw AIToolError.missingArgument("insertEntityId")
             }
-            return try insertAttributes(entityId: Int32(raw))
+            return try insertAttributes(entityId: id)
         case "find_insert_at_point":
             guard let x = doubleArgument(arguments["x"]), let y = doubleArgument(arguments["y"]) else {
                 throw AIToolError.missingArgument("x/y")
@@ -237,12 +237,26 @@ final class AIToolExecutor {
 
         case "propose_explode_block":
             let regen = try liveRegen(), space = spaceProvider?() ?? .model
-            guard let raw = intArgument(arguments["entityId"]), let id = Int32(exactly: raw) else {
+            guard let number = arguments["entityId"] as? NSNumber,
+                  CFGetTypeID(number) != CFBooleanGetTypeID(), number.doubleValue.isFinite,
+                  let id = Int32(exactly: number.doubleValue) else {
                 throw AIToolError.invalidArgument("entityId must be a block instance ID from query_entities.")
             }
-            let count = try AIGeometryEditing.inspectBlock(EntityID(raw: id), regen: regen, visibility: visibility, space: space)
+            let curveIDs: [Int32]?
+            if let json = arguments["curveEntityIdsJSON"] as? String {
+                guard json.utf8.count <= 4096, let data = json.data(using: .utf8),
+                      let decoded = try? JSONDecoder().decode([Int32].self, from: data) else {
+                    throw AIToolError.invalidArgument("curveEntityIdsJSON must be a JSON array of curve IDs from query_entities.")
+                }
+                curveIDs = decoded
+            } else { curveIDs = nil }
+            let count = try AIGeometryEditing.inspectBlock(EntityID(raw: id), regen: regen, visibility: visibility,
+                space: space, curveEntityIds: curveIDs)
+            guard count <= 64 else {
+                throw AIToolError.invalidArgument("This block contains \(count) editable curves. Specify curveEntityIdsJSON for the particular wall/panels, rather than ungrouping the entire sheet. Use query_entities(visibleOnly:true,types:[line,polyline,arc,circle]) to identify them.")
+            }
             let plan = AIGeometryEditPlan(documentID: regen.geometryEditIdentity, revision: regen.parsed.document.revision,
-                paper: space == .paper, sheetID: regen.parsed.activePaperLayoutID, edits: [], explodeBlockIDs: [id])
+                paper: space == .paper, sheetID: regen.parsed.activePaperLayoutID, edits: [], explodeBlockIDs: [id], curveEntityIds: curveIDs ?? AIGeometryEditing.editableCurveIDs(in: EntityID(raw: id), regen: regen, visibility: visibility))
             var action = AIProposedGeometry(kind: .editGeometry,
                 summary: "Ungroup \(count) editable curves from block #\(id). Notes, fills and nested blocks stay grouped. Other instances stay unchanged.",
                 targetLayerName: "Preserve child layers", space: space, replaceExistingLayerContent: false)
@@ -262,7 +276,9 @@ final class AIToolExecutor {
                 throw AIToolError.missingArgument("pathsJSON")
             }
             let space = try requestedSpace(arguments)
-            let aci = Int16(intArgument(arguments["colorIndex"]) ?? 256)
+            let color = intArgument(arguments["colorIndex"]) ?? 256
+            guard (0...256).contains(color) else { throw AIToolError.invalidArgument("colorIndex must be between 0 and 256") }
+            let aci = Int16(color)
             return try drawPolylines(pathsJSON: pathsJSON,
                                      layerName: arguments["layerName"] as? String,
                                      space: space,
@@ -436,17 +452,17 @@ final class AIToolExecutor {
         for raw in rawEdits {
             guard let data = raw.data(using: .utf8),
                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let insertEntityId = intArgument(obj["insertEntityId"]),
+                  let rawID = intArgument(obj["insertEntityId"]), let insertEntityId = Int32(exactly: rawID),
                   let tag = obj["attributeTag"] as? String,
                   let newValue = obj["newValue"] as? String
             else {
                 rejected.append(raw)
                 continue
             }
-            let insertId = EntityID(raw: Int32(insertEntityId))
+            let insertId = EntityID(raw: insertEntityId)
             let currentAttrs = BlockEditor.attributes(of: insertId, in: regen.parsed.store)
             let oldValue = currentAttrs.first { $0.tag == tag }?.value
-            let edit = AIProposedEdit(insertEntityId: Int32(insertEntityId), attributeTag: tag,
+            let edit = AIProposedEdit(insertEntityId: insertEntityId, attributeTag: tag,
                                       oldValue: oldValue, newValue: newValue, willCreate: oldValue == nil)
             stagedEdits.append(edit)
             let label = oldValue == nil ? "(new attribute) → \(newValue)" : "\(oldValue!) → \(newValue)"
@@ -1521,8 +1537,9 @@ final class AIToolExecutor {
     }
 
     private func intArgument(_ value: Any?) -> Int? {
+        if let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() { return nil }
         if let i = value as? Int { return i }
-        if let d = value as? Double { return Int(d) }
+        if let d = value as? Double { return Int(exactly: d) }
         if let s = value as? String { return Int(s) }
         return nil
     }

@@ -181,11 +181,22 @@ final class AIGeometryEditingTests: XCTestCase {
         _ = try AIProposedGeometryApplier.apply(executor.stagedGeometry, session: session, regen: rc)
         XCTAssertNil(parsed.blocks[block.name], "An unused source block must not reappear as recovered model content")
         XCTAssertGreaterThanOrEqual(rc.document.modelBounds.minX, 20)
+        let secondCurve = EntityID(raw: Int32(parsed.store.count - 1))
+        session.performEdit("Reuse retired block index") { tx in
+            _ = BlockEditor.createBlock(name: "ReusedIndex", basePoint: .zero, from: [secondCurve],
+                insertLayerId: 0, in: parsed, tx: tx)
+        }
+        XCTAssertEqual(parsed.blocks["ReusedIndex"]?.blockIndex, block.blockIndex)
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("ai-unpacked-model-\(UUID()).dxf")
         defer { try? FileManager.default.removeItem(at: url) }
         try DXFStructuralWriter.write(parsed, to: url)
         let restored = try RegenCoordinator.loadPackage(url: url)
         XCTAssertGreaterThanOrEqual(restored.document.modelBounds.minX, 20)
+        XCTAssertEqual(restored.parsed.store.headers.filter { $0.type == .line && !$0.flags.contains(.deleted) }.count, 2,
+            "Retired block content must not resurrect when its owner index is reused")
+        session.undo(); session.undo()
+        XCTAssertNotNil(parsed.blocks[block.name]); XCTAssertFalse(parsed.store.isDeleted(child))
+        XCTAssertFalse(parsed.store.isDeleted(other))
     }
 
     @MainActor func testUnpackPreservesPaperNotesAndPatternDataThroughUndoRedoAndSave() throws {
@@ -194,9 +205,11 @@ final class AIGeometryEditingTests: XCTestCase {
         let parsed = rc.parsed, store = parsed.store
         let block = EditableBlockDef(); block.name = "FacadeWithNotes"
         block.blockIndex = (parsed.blocks.values.map(\.blockIndex).max() ?? -1) + 1
-        block.entityStart = Int32(store.count); block.entityCount = 3
+        block.entityStart = Int32(store.count); block.entityCount = 4
         let curve = store.append(EntityPrototype(type: .line, layerId: 0, lineweight: 25, owner: .block(block.blockIndex),
             payload: .line(LinePayload(a: Vec3(x: 0, y: 0), b: Vec3(x: 10, y: 0)))))
+        let untouchedCurve = store.append(EntityPrototype(type: .line, layerId: 0, owner: .block(block.blockIndex),
+            payload: .line(LinePayload(a: Vec3(x: 20, y: 0), b: Vec3(x: 30, y: 0)))))
         let text = store.append(EntityPrototype(type: .mtext, layerId: 0, lineweight: 15, owner: .block(block.blockIndex),
             payload: .mtext(MTextPayload(insertion: Vec3(x: 2, y: 3), height: 1, stringId: store.strings.intern("Keep this note")))))
         let hatch = store.append(EntityPrototype(type: .hatch, layerId: 0, owner: .block(block.blockIndex),
@@ -214,19 +227,21 @@ final class AIGeometryEditingTests: XCTestCase {
         }
         let executor = AIToolExecutor(regen: rc, visibility: VisibilityState(), spaceProvider: { .paper })
         let beforeBlockCount = parsed.blocks.count
-        _ = try executor.execute(tool: "propose_explode_block", arguments: ["entityId": Int(root.raw)])
+        _ = try executor.execute(tool: "propose_explode_block", arguments: ["entityId": Int(root.raw), "curveEntityIdsJSON": "[\(curve.raw)]"])
         _ = try AIProposedGeometryApplier.apply(executor.stagedGeometry, session: session, regen: rc)
         XCTAssertEqual(parsed.blocks.count, beforeBlockCount)
         let remainder = try XCTUnwrap(parsed.blocks.values.first { $0.name.hasPrefix("NOVACAD-REMAINDER-") })
-        XCTAssertEqual(remainder.entityCount, 2)
-        XCTAssertEqual(store.header(EntityID(raw: remainder.entityStart))?.type, .mtext)
-        XCTAssertEqual(store.header(EntityID(raw: remainder.entityStart))?.lineweight, 15)
-        XCTAssertEqual(store.residualPairs[remainder.entityStart + 1]?.pairs.map(\.value), ["1.25","2.5","30"])
+        XCTAssertEqual(remainder.entityCount, 3)
+        XCTAssertEqual(store.header(EntityID(raw: remainder.entityStart))?.type, .line)
+        XCTAssertTrue(store.isDeleted(untouchedCurve))
+        XCTAssertEqual(store.header(EntityID(raw: remainder.entityStart + 1))?.type, .mtext)
+        XCTAssertEqual(store.header(EntityID(raw: remainder.entityStart + 1))?.lineweight, 15)
+        XCTAssertEqual(store.residualPairs[remainder.entityStart + 2]?.pairs.map(\.value), ["1.25","2.5","30"])
         let extracted = EntityID(raw: Int32(store.count - 1))
         let shape = try AIGeometryEditing.inspect(extracted, regen: rc, visibility: VisibilityState(), space: .paper)
         XCTAssertEqual(shape.points[0][0], 50, accuracy: 1e-9); XCTAssertEqual(shape.points[1][1], 40, accuracy: 1e-9)
         XCTAssertEqual(store.header(extracted)?.lineweight, 25)
-        XCTAssertFalse(store.isDeleted(curve)); XCTAssertFalse(store.isDeleted(text)); XCTAssertFalse(store.isDeleted(hatch))
+        XCTAssertTrue(store.isDeleted(curve)); XCTAssertTrue(store.isDeleted(text)); XCTAssertTrue(store.isDeleted(hatch))
         XCTAssertTrue(rc.document.paperGroups.flatMap(\.texts).contains { $0.text == "Keep this note" })
         session.undo(); XCTAssertEqual(parsed.blocks.count, beforeBlockCount)
         XCTAssertFalse(store.isDeleted(root))
@@ -238,9 +253,58 @@ final class AIGeometryEditingTests: XCTestCase {
         restored.selectPaperLayout(0x23)
         XCTAssertTrue(restored.document.paperGroups.flatMap(\.texts).contains { $0.text == "Keep this note" })
         let retained = try XCTUnwrap(restored.parsed.blocks.values.first { $0.name == remainder.name })
-        XCTAssertEqual(restored.parsed.store.residualPairs[retained.entityStart + 1]?.pairs.filter { [43,44,53].contains(Int($0.code)) }.compactMap { Double($0.value) }, [1.25,2.5,30])
+        XCTAssertEqual(restored.parsed.store.residualPairs[retained.entityStart + 2]?.pairs.filter { [43,44,53].contains(Int($0.code)) }.compactMap { Double($0.value) }, [1.25,2.5,30])
         restored.selectPaperLayout(0x1B)
         XCTAssertFalse(restored.document.paperGroups.flatMap(\.texts).contains { $0.text == "Keep this note" })
+    }
+
+    @MainActor func testLargeBlockRequiresSpecificCurvesAndRetainsByBlockAppearance() throws {
+        let parsed = EditableParsedDocument()
+        var parentLayer = DXFLayer(id: 0, name: "0", color: .rgb(0x663399))
+        parentLayer.lineweight = 35; parentLayer.linetypeId = 1
+        parsed.layers = [parentLayer, DXFLayer(id: 1, name: "Glass", color: .rgb(0x00FF00))]
+        parsed.layerIdByName = ["0":0, "Glass":1]
+        parsed.linetypes = [DXFLinetype(name: "CONTINUOUS", dashes: []), DXFLinetype(name: "DASHED", dashes: [2,-1])]
+        let block = EditableBlockDef(); block.name = "ManyPanels"; block.blockIndex = 0
+        block.entityStart = 0; block.entityCount = 65
+        for i in 0..<65 {
+            _ = parsed.store.append(EntityPrototype(type: .line, layerId: 1, aci: 0, linetypeId: -2, lineweight: -2, owner: .block(0),
+                payload: .line(LinePayload(a: Vec3(x: Double(i), y: 0), b: Vec3(x: Double(i), y: 1)))))
+        }
+        parsed.blocks[block.name] = block
+        let root = parsed.store.append(EntityPrototype(type: .insert, layerId: 0,
+            payload: .insert(InsertPayload(blockNameId: parsed.store.strings.intern(block.name), position: Vec3(x: 20, y: 5)))))
+        let rc = RegenCoordinator(parsed: parsed, document: Regenerator.build(from: parsed, parseSeconds: 0) { _ in })
+        let session = DocumentSession(); session.regen = rc
+        let executor = AIToolExecutor(regen: rc, visibility: VisibilityState())
+        XCTAssertThrowsError(try executor.execute(tool: "propose_explode_block", arguments: ["entityId": Int(root.raw)]))
+        XCTAssertThrowsError(try executor.execute(tool: "propose_explode_block", arguments: ["entityId": Int(root.raw), "curveEntityIdsJSON":"[999]"]))
+        for invalid: Any in [Double.infinity, Double.nan, 1e100, 1.5, true, "65"] {
+            XCTAssertThrowsError(try executor.execute(tool: "propose_explode_block", arguments: ["entityId": invalid]))
+        }
+        XCTAssertThrowsError(try executor.execute(tool: "get_insert_attributes", arguments: ["insertEntityId": Int.max]))
+        XCTAssertThrowsError(try executor.execute(tool: "get_insert_attributes", arguments: ["insertEntityId": 1e300]))
+        XCTAssertNoThrow(try executor.execute(tool: "query_entities", arguments: ["offset": 1e300, "limit": Double.infinity]))
+        XCTAssertThrowsError(try executor.execute(tool: "draw_polylines", arguments: ["pathsJSON":"[[[0,0],[1,1]]]", "colorIndex": Int.max]))
+        _ = try executor.execute(tool: "propose_attribute_edits", arguments: ["edits": ["{\"insertEntityId\":9223372036854775807,\"attributeTag\":\"TAG\",\"newValue\":\"VALUE\"}"]])
+        XCTAssertTrue(executor.stagedEdits.isEmpty)
+        XCTAssertTrue(executor.stagedGeometry.isEmpty)
+        _ = try executor.execute(tool: "propose_explode_block", arguments: ["entityId": Int(root.raw), "curveEntityIdsJSON":"[0]"])
+        session.visibility.hiddenLayerIds = [1]
+        XCTAssertThrowsError(try AIProposedGeometryApplier.apply(executor.stagedGeometry, session: session, regen: rc))
+        session.visibility.hiddenLayerIds = []
+        _ = try AIProposedGeometryApplier.apply(executor.stagedGeometry, session: session, regen: rc)
+        let extracted = try XCTUnwrap(parsed.store.headers.last)
+        XCTAssertEqual(extracted.trueColor, 0x663399); XCTAssertEqual(extracted.lineweight, 35)
+        XCTAssertEqual(extracted.linetypeId, 1); XCTAssertEqual(extracted.layerId, 1)
+        XCTAssertTrue((0..<65).allSatisfy { parsed.store.isDeleted(EntityID(raw: Int32($0))) })
+        let remainder = try XCTUnwrap(parsed.blocks.values.first)
+        XCTAssertEqual(remainder.entityCount, 64)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("ai-scoped-unpack-\(UUID()).dxf")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try DXFStructuralWriter.write(parsed, to: url)
+        let restored = try RegenCoordinator.loadPackage(url: url)
+        XCTAssertEqual(restored.parsed.store.headers.filter { $0.type == .line && !$0.flags.contains(.deleted) }.count, 65)
     }
 
     @MainActor func testOptionalLiveAssistantStagesCurveOnSyntheticDrawing() async throws {

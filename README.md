@@ -289,7 +289,7 @@ locked/hidden target prevents applying a stale proposal. Dimensions and notes ar
 not automatically updated.
 
 For curves inside a simple local block, `propose_explode_block` first stages
-ungrouping that instance's editable curves. Notes, fills and nested blocks remain
+ungrouping up to 64 specified curves from that instance. Other curves, notes, fills and nested blocks remain
 in a private remainder block at the original transform; other instances stay
 unchanged. Apply that step, then ask the assistant to inspect and reshape the new
 objects. Xrefs, 3D/irregular block transforms, attributes and attached metadata

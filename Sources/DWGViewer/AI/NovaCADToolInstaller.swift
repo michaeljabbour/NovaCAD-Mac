@@ -212,7 +212,8 @@ enum NovaCADToolInstaller {
             name: "propose_explode_block",
             description: AIToolSchema.tools.first { $0.name == "propose_explode_block" }!.description,
             argsDeclaration: """
-    entityId: \(arg("num", "Root block instance ID from query_entities or selection, on the active sheet/space."))
+    entityId: \(arg("num", "Root block instance ID from query_entities or selection, on the active sheet/space.")),
+    curveEntityIdsJSON: \(arg("str", "JSON array of 1–64 specific curve IDs to ungroup, from query_entities. Other curves stay grouped. Omit only for all curves in a small block.", optional: true))
     """
         ),
         ToolSpec(

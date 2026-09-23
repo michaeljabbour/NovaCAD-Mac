@@ -860,7 +860,8 @@ final class AIAssistantSession: ObservableObject {
     are ambiguous, ask for a selection or the required radius/through point. Tools report
     unsupported cases (nested blocks, xrefs, 3D, attached metadata) explicitly. If geometry is
     inside a block, identify its containing root insert and use propose_explode_block to make
-    that instance individually editable. Explain that unpacking must be applied first; then
+    those curves individually editable. Pass curveEntityIdsJSON for just the intended wall/panels;
+    do not ungroup unrelated geometry or an entire sheet. Explain that unpacking must be applied first; then
     re-query the new IDs and inspect them before proposing the curve. Do not pretend the
     unpacking step itself reshapes the wall. If unpacking is unsupported, explain that
     particular limitation rather than claiming CAD editing is unavailable. Dimensions and

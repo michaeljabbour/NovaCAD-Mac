@@ -158,6 +158,7 @@ struct AIGeometryEditPlan: Codable {
     let sheetID: UInt64?
     var edits: [Edit]
     var explodeBlockIDs: [Int32]? = nil
+    var curveEntityIds: [Int32]? = nil
 }
 
 @MainActor
@@ -207,16 +208,20 @@ enum AIGeometryEditing {
 
     /// Unpack simple curves from one planar block instance; retain complex
     /// content in a private remainder block at its original transform.
-    static func inspectBlock(_ id: EntityID, regen: RegenCoordinator, visibility: VisibilityState, space: SpaceID) throws -> Int {
+    static func inspectBlock(_ id: EntityID, regen: RegenCoordinator, visibility: VisibilityState, space: SpaceID, curveEntityIds: [Int32]? = nil) throws -> Int {
         let parsed = regen.parsed, store = parsed.store
         guard let h = store.header(id), h.type == .insert, !h.flags.contains(.deleted),
               !h.flags.contains(.invisible), !h.flags.contains(.mirrorOCS),
+              parsed.layers.indices.contains(Int(h.layerId)),
               !visibility.hiddenLayerIds.contains(Int(h.layerId)), !visibility.lockedLayerIds.contains(Int(h.layerId)) else {
             throw AIToolError.invalidArgument("Choose a visible, unlocked block instance.")
         }
         let sheet = PaperLayoutOwnership(parsed).ownerSheetID(for: id, in: store)
         guard space == .model ? h.owner.isModel : (sheet != nil && sheet == parsed.activePaperLayoutID) else {
             throw AIToolError.invalidArgument("Choose a root block instance on the active sheet/space. Use query_entities with types:[insert].")
+        }
+        guard !(store.residualPairs[id.raw]?.pairs ?? []).contains(where: { ![100, 330, 410, 48].contains(Int($0.code)) }) else {
+            throw AIToolError.invalidArgument("This block instance has display properties or metadata that ungrouping cannot preserve.")
         }
         let p = store.inserts[Int(h.payload)]
         guard let block = parsed.blocks[store.strings.string(for: p.blockNameId)],
@@ -239,9 +244,28 @@ enum AIGeometryEditing {
                 throw AIToolError.invalidArgument("This block has attached metadata or attributes that instance unpacking cannot preserve.")
             }
         }
-        let count = children.filter { extractable($0, store: store, visibility: visibility) }.count
+        let eligible = Set(children.filter { extractable($0, store: store, visibility: visibility) }.map(\.raw))
+        if let requested = curveEntityIds {
+            guard !requested.isEmpty, requested.count <= 64, Set(requested).count == requested.count,
+                  Set(requested).isSubset(of: eligible) else {
+                throw AIToolError.invalidArgument("Specify 1–64 distinct directly editable curve IDs inside this block. Read IDs using query_entities; nested-block children require their own instance.")
+            }
+        }
+        let count = curveEntityIds?.count ?? eligible.count
         guard count > 0 else { throw AIToolError.invalidArgument("This block has no directly editable, unlocked 2D curves. Nested blocks remain grouped.") }
         return count
+    }
+
+    /// Resolve the exact source set while staging. Persist those IDs even for
+    /// small "all curves" requests so visibility changes cannot alter the plan.
+    static func editableCurveIDs(in id: EntityID, regen: RegenCoordinator, visibility: VisibilityState) -> [Int32] {
+        let store = regen.parsed.store
+        let header = store.header(id)!
+        let insert = store.inserts[Int(header.payload)]
+        let block = regen.parsed.blocks[store.strings.string(for: insert.blockNameId)]!
+        return (block.entityStart..<(block.entityStart + block.entityCount)).filter {
+            extractable(EntityID(raw: $0), store: store, visibility: visibility)
+        }
     }
 
     private static func extractable(_ id: EntityID, store: EntityStore, visibility: VisibilityState) -> Bool {
@@ -264,13 +288,14 @@ enum AIGeometryEditing {
     /// pattern residuals in their original coordinate system. No shared source
     /// entities or definitions are edited; structural changes participate in Undo.
     private static func unpack(_ id: EntityID, tx: Transaction, regen: RegenCoordinator,
-                               visibility: VisibilityState, paper: Bool) {
+                               visibility: VisibilityState, paper: Bool, curveEntityIds: [Int32]?) {
         let parsed = regen.parsed, store = parsed.store
         let image = store.snapshot(id)!, h = image.header
         let ip = store.inserts[Int(h.payload)]
         let block = parsed.blocks[store.strings.string(for: ip.blockNameId)]!
         let children = (block.entityStart..<(block.entityStart + block.entityCount)).map { EntityID(raw: $0) }.filter { !store.isDeleted($0) }
-        let curves = children.filter { extractable($0, store: store, visibility: visibility) }
+        let requested = curveEntityIds.map(Set.init)
+        let curves = children.filter { (requested?.contains($0.raw) ?? true) && extractable($0, store: store, visibility: visibility) }
         let curveSet = Set(curves)
         let retained = children.filter { !curveSet.contains($0) }
         let owner: OwnerRef = paper ? .paper : .model
@@ -302,7 +327,18 @@ enum AIGeometryEditing {
         let transform = Transform2(m11: c, m12: -s, m21: s, m22: c,
             tx: ip.position.x - c * block.base.x + s * block.base.y,
             ty: ip.position.y - s * block.base.x - c * block.base.y)
-        let inherited = PropertyResolver.resolveTopLevel(layerId: h.layerId, aci: h.aci, trueColor: h.trueColor, linetypeId: h.linetypeId)
+        var inherited = PropertyResolver.resolveTopLevel(layerId: h.layerId, aci: h.aci, trueColor: h.trueColor, linetypeId: h.linetypeId)
+        let parentLayer = parsed.layers[Int(h.layerId)]
+        // BYBLOCK on a child inherits the parent's resolved appearance, not
+        // the child's own layer after extraction.
+        if h.aci == 256, h.trueColor == 0xFF00_0000 {
+            inherited.aci = 7
+            switch parentLayer.color {
+            case .foreground: inherited.trueColor = 0xFF00_0000
+            case .rgb(let rgb): inherited.trueColor = rgb
+            }
+        }
+        if h.linetypeId == -1 { inherited.linetypeId = Int16(clamping: parentLayer.linetypeId) }
         for source in curves {
             let sourceImage = store.snapshot(source)!, ch = sourceImage.header
             let resolved = PropertyResolver.resolveForExplode(entityLayerId: ch.layerId, entityAci: ch.aci,
@@ -310,7 +346,7 @@ enum AIGeometryEditing {
             var proto = sourceImage.asPrototype(owner: owner)
             proto.layerId = resolved.layerId; proto.aci = resolved.aci
             proto.trueColor = resolved.trueColor; proto.linetypeId = resolved.linetypeId
-            if proto.lineweight == -2 { proto.lineweight = h.lineweight }
+            if proto.lineweight == -2 { proto.lineweight = h.lineweight == -1 ? parentLayer.lineweight : h.lineweight }
             EntityTransform.apply(transform, to: &proto.payload, mirrtext: false)
             tx.add(proto)
         }
@@ -327,6 +363,10 @@ enum AIGeometryEditing {
             return store.strings.string(for: nameID) == block.name
         }
         if !stillReferenced {
+            // The writer groups by owner index rather than entityStart/count.
+            // Tombstone retired children too, so a future block-index reuse
+            // cannot resurrect them in a newly created definition on save.
+            for child in children { tx.delete(child) }
             parsed.blocks[block.name] = nil
             tx.registerSideEffect(undo: { parsed.blocks[block.name] = block }, redo: { parsed.blocks[block.name] = nil })
         }
@@ -340,7 +380,7 @@ enum AIGeometryEditing {
             throw AIToolError.invalidArgument("Return to the proposal's sheet and drawing space before applying it.")
         }
         for raw in plan.explodeBlockIDs ?? [] {
-            _ = try inspectBlock(EntityID(raw: raw), regen: regen, visibility: visibility, space: space)
+            _ = try inspectBlock(EntityID(raw: raw), regen: regen, visibility: visibility, space: space, curveEntityIds: plan.curveEntityIds)
         }
         var ids = Set<Int32>()
         for edit in plan.edits {
@@ -356,7 +396,7 @@ enum AIGeometryEditing {
         let store = regen.parsed.store
         var changed = 0
         for raw in plan.explodeBlockIDs ?? [] {
-            unpack(EntityID(raw: raw), tx: tx, regen: regen, visibility: visibility, paper: plan.paper)
+            unpack(EntityID(raw: raw), tx: tx, regen: regen, visibility: visibility, paper: plan.paper, curveEntityIds: plan.curveEntityIds)
             changed += 1
         }
         for edit in plan.edits {

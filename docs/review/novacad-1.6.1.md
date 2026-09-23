@@ -122,3 +122,10 @@ Retest `AIGeometryEditingTests`, the existing tool-schema parity tests and the
 full suite. The optional private fixture performs read-only block preflight;
 it does not apply, save or rewrite that drawing. Live provider/UI behavior is a
 separate check from the deterministic tool/transaction tests.
+
+Block extraction is scoped to at most 64 explicit curve IDs. Small-block
+all-curves requests also freeze their exact IDs when staged; hiding/locking a
+target later rejects Apply rather than changing the source set. BYBLOCK color,
+linetype and lineweight are resolved against the parent layer. Retiring an unused
+source definition tombstones its children in the same transaction, preventing
+owner-index reuse from resurrecting them during a later save.
