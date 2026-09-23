@@ -99,8 +99,7 @@ enum DrawingReader {
                     text: nil, blockName: nil, ownerInsertId: run.insertId >= 0 ? run.insertId : nil))
             }
             for arc in g.strokes.arcs where arc.entityId >= 0 {
-                let b = CGRect(x: arc.center.x - arc.radius, y: arc.center.y - arc.radius,
-                               width: arc.radius * 2, height: arc.radius * 2)
+                let b = arcBounds(arc)
                 appendIfRoom(EntitySummary(
                     entityId: arc.entityId, type: arc.isFullCircle ? "circle" : "arc", layer: layer,
                     minX: b.minX, minY: b.minY, maxX: b.maxX, maxY: b.maxY,
@@ -137,6 +136,17 @@ enum DrawingReader {
 
         return DrawingSummary(space: space == .paper ? "paper" : "model",
                               entities: out, truncated: truncated, totalEntityCount: total)
+    }
+
+    /// Match the render/hit-test sweep, including wrapped arcs. Using an entire
+    /// circle for a partial arc can incorrectly include offscreen geometry or
+    /// inflate the containing block's footprint.
+    static func arcBounds(_ arc: StrokeStore.Arc) -> CGRect {
+        arc.isFullCircle
+            ? CGRect(x: arc.center.x - arc.radius, y: arc.center.y - arc.radius,
+                     width: 2 * arc.radius, height: 2 * arc.radius)
+            : HitTester.arcBoundingBox(center: arc.center, radius: arc.radius,
+                                       startDeg: arc.startAngleDeg, endDeg: arc.endAngleDeg)
     }
 
     /// Resolves a positional INSERT index (as carried by `TextItem.insertId`/
@@ -180,8 +190,7 @@ enum DrawingReader {
             }
             for (index, arc) in g.strokes.arcs.enumerated() {
                 if let tombstones, tombstones.isDead(.arc, Int32(index)) { continue }
-                let b = CGRect(x: arc.center.x - arc.radius, y: arc.center.y - arc.radius,
-                               width: arc.radius * 2, height: arc.radius * 2)
+                let b = arcBounds(arc)
                 include(arc.insertId, b)
             }
             for (index, run) in g.strokes.fillRuns.enumerated() {

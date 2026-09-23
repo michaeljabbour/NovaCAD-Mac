@@ -64,8 +64,9 @@ final class AIViewportTests: XCTestCase {
                 payload: .arc(ArcPayload(center: Vec3(x: 5, y: 5), radius: 2, startAngleDeg: 0, endAngleDeg: 90))))
         }
         let regen = RegenCoordinator(parsed: parsed, document: Regenerator.build(from: parsed, parseSeconds: 0) { _ in })
+        var viewport = CGRect(x: 0, y: 0, width: 10, height: 10)
         let executor = AIToolExecutor(regen: regen, visibility: VisibilityState(), spaceProvider: { .model },
-            viewportProvider: { CGRect(x: 0, y: 0, width: 10, height: 10) })
+            viewportProvider: { viewport })
         var ids = Set<Int>()
         for offset in 0..<3 {
             let result = try json(executor.execute(tool: "query_entities", arguments: ["visibleOnly": true, "limit": 1, "offset": offset]))
@@ -78,6 +79,23 @@ final class AIViewportTests: XCTestCase {
         XCTAssertEqual((arcs["rows"] as? [[String: Any]])?.first?["layer"] as? String, "New walls")
         let textFilter = try json(executor.execute(tool: "query_entities", arguments: ["visibleOnly": true, "textContains": "glass"]))
         XCTAssertEqual(textFilter["totalMatched"] as? Int, 0)
+        // A first-quadrant arc must not match the opposite corner of its
+        // enclosing circle, even though that full-circle box intersects.
+        viewport = CGRect(x: 3, y: 3, width: 0.5, height: 0.5)
+        let outsideSweep = try json(executor.execute(tool: "query_entities", arguments: ["visibleOnly": true, "types": ["arc"]]))
+        XCTAssertEqual(outsideSweep["totalMatched"] as? Int, 0)
+        viewport = CGRect(x: 6, y: 6, width: 0.5, height: 0.5)
+        let insideSweep = try json(executor.execute(tool: "query_entities", arguments: ["visibleOnly": true, "types": ["arc"]]))
+        XCTAssertEqual(insideSweep["totalMatched"] as? Int, 1)
+        let arcGroup = try XCTUnwrap(regen.document.modelGroups.first { !$0.strokes.arcs.isEmpty })
+        arcGroup.strokes.arcs[0].insertId = 42
+        let blockBounds = try XCTUnwrap(DrawingReader.insertContentBoundsByIndex(groups: [arcGroup])[42])
+        XCTAssertEqual(blockBounds.minX, 5, accuracy: 1e-9)
+        XCTAssertEqual(blockBounds.minY, 5, accuracy: 1e-9)
+        XCTAssertEqual(blockBounds.maxX, 7, accuracy: 1e-9)
+        var circle = arcGroup.strokes.arcs[0]
+        circle.isFullCircle = true
+        XCTAssertEqual(DrawingReader.arcBounds(circle), CGRect(x: 3, y: 3, width: 4, height: 4))
     }
 
     @MainActor func testViewportRejectsOtherSheetsAndUnavailableCanvas() throws {

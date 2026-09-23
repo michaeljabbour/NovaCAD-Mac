@@ -48,6 +48,12 @@ git merge-tree --write-tree origin/main HEAD
    Inactive-sheet viewport queries fail explicitly. This is approximate geometry
    intersection, not screenshot vision or an unrestricted geometry-editing tool.
 
+The follow-up AI review identified partial arcs using full-circle bounds. The
+correction shares sweep-aware bounds between visible geometry queries, drawing
+summaries and block footprints, with regression assertions for offscreen arcs,
+onscreen arcs, containing blocks and full circles. The complete author suite
+still passes 1,265 tests, 7 skipped, 0 failures after this correction.
+
 ## Existing 1.6.1 behavior to preserve
 
 - Empty/default-viewport-only layouts stay in the file but leave sheet navigation.

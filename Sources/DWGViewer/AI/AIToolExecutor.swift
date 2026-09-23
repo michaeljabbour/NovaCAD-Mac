@@ -1155,9 +1155,11 @@ final class AIToolExecutor {
         let regen = try liveRegen()
         var document = regen.document
         if let sheetName {
-            guard space == .paper,
-                  let sheet = regen.parsed.paperLayouts.first(where: { $0.name.caseInsensitiveCompare(sheetName) == .orderedSame }) else {
-                throw AIToolError.invalidArgument("Use space: paper and an exact sheetName from read_drawing")
+            guard space == .paper else {
+                throw AIToolError.invalidArgument("sheetName requires space: paper")
+            }
+            guard let sheet = regen.parsed.paperLayouts.first(where: { $0.name.caseInsensitiveCompare(sheetName) == .orderedSame }) else {
+                throw AIToolError.invalidArgument("Unknown paper sheet. Use an exact sheetName from read_drawing")
             }
             if sheet.id != regen.parsed.activePaperLayoutID {
                 if inspectedSheet?.id != sheet.id || inspectedSheet?.revision != regen.revision {
@@ -1311,9 +1313,9 @@ final class AIToolExecutor {
                 }
                 for (i, arc) in group.strokes.arcs.enumerated() {
                     guard dead?.isDead(.arc, Int32(i)) != true else { continue }
-                    addGeometry(id: arc.entityId, kind: arc.isFullCircle ? "circle" : "arc", layer: group.layerId,
-                        bounds: CGRect(x: arc.center.x - arc.radius, y: arc.center.y - arc.radius,
-                                       width: 2 * arc.radius, height: 2 * arc.radius))
+                    let bounds = DrawingReader.arcBounds(arc)
+                    addGeometry(id: arc.entityId, kind: arc.isFullCircle ? "circle" : "arc",
+                                layer: group.layerId, bounds: bounds)
                 }
             }
         }

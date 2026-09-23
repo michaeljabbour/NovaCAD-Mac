@@ -56,10 +56,8 @@ enum NovaCADToolInstaller {
         let argsDeclaration: String
     }
 
-    /// The catalog of tools NovaCAD installs — the SAME four tools
-    /// `AIToolSchema.tools` declares for the Anthropic tool-calling path
-    /// (`read_drawing`, `get_insert_attributes`, `find_insert_at_point`,
-    /// `propose_attribute_edits`), described here in the Zod-forwarder shape
+    /// The same drawing tool catalog as `AIToolSchema.tools` declares for
+    /// the Anthropic tool-calling path, expressed in the Zod-forwarder shape
     /// opencode needs instead. Keep this list, `AIToolSchema.tools`, and
     /// `NovaCADToolRouter.knownTools`/`handle(tool:body:)` in sync — see
     /// `AIToolExecutor.execute(tool:arguments:)`, which both the Anthropic

@@ -46,8 +46,10 @@ enum AIContextBudget {
         return text
     }
 
-    /// Drop only complete OLD tool exchanges, retaining the current result and
-    /// original question. The UI transcript and staged edits are unaffected.
+    /// Drop complete earlier tool exchanges, including earlier rounds of the
+    /// current turn, while retaining the latest exchange and original question.
+    /// The model can lose earlier findings, but the UI transcript and staged
+    /// edits are unaffected. This is the deliberate tradeoff for a bounded request.
     static func compact(_ messages: [AnthropicRequest.Message], model: String,
                         system: String?, tools: [AIToolSchema.Tool]?) throws -> [AnthropicRequest.Message] {
         var result = messages
