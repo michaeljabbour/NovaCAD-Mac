@@ -146,6 +146,15 @@ final class AIGeometryEditingTests: XCTestCase {
         XCTAssertFalse(rc.parsed.store.header(id)!.flags.contains(.deleted))
         _ = try AIProposedGeometryApplier.apply(executor.stagedGeometry, session: session, regen: rc)
         XCTAssertTrue(rc.parsed.store.header(id)!.flags.contains(.deleted)); session.undo()
+        let empty = AIGeometryEditPlan(documentID: rc.geometryEditIdentity, revision: rc.parsed.document.revision,
+                                       paper: false, sheetID: nil, edits: [.init(entityIds: [], replacements: [])])
+        XCTAssertThrowsError(try AIGeometryEditing.validate(empty, regen: rc, visibility: session.visibility, space: .model),
+                             "an edit naming no objects must be rejected, not crash at apply")
+        let before = rc.parsed.store.count
+        rc.parsed.document.transact("Empty") { tx in
+            XCTAssertEqual(AIGeometryEditing.apply(empty, tx: tx, regen: rc, visibility: session.visibility), 0)
+        }
+        XCTAssertEqual(rc.parsed.store.count, before)
         rc.parsed.store.residualPairs[id.raw] = RawPairBlob(pairs: [(102, "{ACAD_REACTORS"), (330, "42"), (102, "}")])
         XCTAssertThrowsError(try AIGeometryEditing.inspect(id, regen: rc, visibility: session.visibility, space: .model))
     }
@@ -197,6 +206,57 @@ final class AIGeometryEditingTests: XCTestCase {
         session.undo(); session.undo()
         XCTAssertNotNil(parsed.blocks[block.name]); XCTAssertFalse(parsed.store.isDeleted(child))
         XCTAssertFalse(parsed.store.isDeleted(other))
+    }
+
+    /// AGENTS.md attribute rules: ATTRIB data (visible or invisible) is
+    /// data-bearing and must never be dropped. Unpacking cannot re-home an
+    /// ATTRIB, so any attributed instance -- directly or via a nested INSERT
+    /// in the block -- must be refused before anything is staged or changed.
+    @MainActor func testUnpackRefusesAttributedInstancesAndStagesNothing() throws {
+        let parsed = EditableParsedDocument()
+        parsed.layers = [DXFLayer(id: 0, name: "Glass")]; parsed.layerIdByName = ["Glass": 0]
+        func line(_ owner: Int32) -> EntityPrototype {
+            EntityPrototype(type: .line, layerId: 0, owner: .block(owner),
+                payload: .line(LinePayload(a: Vec3(x: 0, y: 0), b: Vec3(x: 10, y: 0))))
+        }
+        func attrib(_ parent: EntityID, _ value: String) -> EntityPrototype {
+            EntityPrototype(type: .attrib, layerId: 0, owner: .parentEntity(parent),
+                payload: .text(TextPayload(position: Vec3(x: 0, y: 0), height: 1,
+                                           stringId: parsed.store.strings.intern(value))))
+        }
+        // Block "Tag": one line. Block "Outer": one line + a nested INSERT of "Tag" that carries an ATTRIB.
+        let tagChild = parsed.store.append(line(0))
+        let tag = EditableBlockDef(); tag.name = "Tag"; tag.blockIndex = 0
+        tag.entityStart = tagChild.raw; tag.entityCount = 1; parsed.blocks[tag.name] = tag
+        let tagName = parsed.store.strings.intern(tag.name)
+        let outerLine = parsed.store.append(line(1))
+        let nested = parsed.store.append(EntityPrototype(type: .insert, layerId: 0, owner: .block(1),
+            payload: .insert(InsertPayload(blockNameId: tagName, position: Vec3(x: 0, y: 5)))))
+        let outer = EditableBlockDef(); outer.name = "Outer"; outer.blockIndex = 1
+        outer.entityStart = outerLine.raw; outer.entityCount = 2; parsed.blocks[outer.name] = outer
+        _ = parsed.store.append(attrib(nested, "NESTED"))
+        let outerName = parsed.store.strings.intern(outer.name)
+        let visible = parsed.store.append(EntityPrototype(type: .insert, layerId: 0,
+            payload: .insert(InsertPayload(blockNameId: tagName, position: Vec3(x: 20, y: 0)))))
+        let hidden = parsed.store.append(EntityPrototype(type: .insert, layerId: 0,
+            payload: .insert(InsertPayload(blockNameId: tagName, position: Vec3(x: 40, y: 0)))))
+        let viaNested = parsed.store.append(EntityPrototype(type: .insert, layerId: 0,
+            payload: .insert(InsertPayload(blockNameId: outerName, position: Vec3(x: 60, y: 0)))))
+        _ = parsed.store.append(attrib(visible, "SHOWN"))
+        let invisibleAttrib = parsed.store.append(attrib(hidden, "HIDDEN"))
+        parsed.document.transact("Hide") { tx in tx.modifyHeader(invisibleAttrib) { $0.flags.insert(.invisible) } }
+
+        let rc = RegenCoordinator(parsed: parsed, document: Regenerator.build(from: parsed, parseSeconds: 0) { _ in })
+        let executor = AIToolExecutor(regen: rc, visibility: VisibilityState())
+        let revision = parsed.document.revision, count = parsed.store.count
+        for (insert, label) in [(visible, "visible ATTRIB"), (hidden, "invisible ATTRIB"), (viaNested, "nested INSERT's ATTRIB")] {
+            XCTAssertThrowsError(try executor.execute(tool: "propose_explode_block", arguments: ["entityId": Int(insert.raw)]),
+                                 "an instance must be refused when it carries: \(label)")
+            XCTAssertTrue(executor.stagedGeometry.isEmpty, "nothing may be staged for: \(label)")
+        }
+        XCTAssertEqual(parsed.document.revision, revision); XCTAssertEqual(parsed.store.count, count)
+        XCTAssertEqual(BlockEditor.attributes(of: hidden, in: parsed.store).count, 1, "the invisible ATTRIB is retained")
+        XCTAssertNotNil(parsed.blocks[tag.name]); XCTAssertNotNil(parsed.blocks[outer.name])
     }
 
     @MainActor func testUnpackPreservesPaperNotesAndPatternDataThroughUndoRedoAndSave() throws {

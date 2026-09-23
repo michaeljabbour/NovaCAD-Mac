@@ -132,7 +132,7 @@ indexes sibling drawings only when it needs to resolve external references.
 This repository is the `michaeljabbour/NovaCAD-Mac` fork. Build from this
 checkout to get its workspace changes; upstream installers do not contain
 changes that have not been merged and released upstream. See
-[CHANGELOG.md](CHANGELOG.md) for the fork's 1.6.1 changes.
+[CHANGELOG.md](CHANGELOG.md) for the fork's 1.6.1 and 1.6.2 changes.
 
 Upstream prebuilt installers are attached to
 [upstream releases](https://github.com/ryandirezze/NovaCAD-Mac/releases/latest).

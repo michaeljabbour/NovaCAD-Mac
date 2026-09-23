@@ -384,6 +384,7 @@ enum AIGeometryEditing {
         }
         var ids = Set<Int32>()
         for edit in plan.edits {
+            guard !edit.entityIds.isEmpty else { throw AIToolError.invalidArgument("Each replacement must name at least one existing object.") }
             for raw in edit.entityIds {
                 guard ids.insert(raw).inserted else { throw AIToolError.invalidArgument("An object appears in more than one replacement.") }
                 _ = try inspect(EntityID(raw: raw), regen: regen, visibility: visibility, space: space)
@@ -400,7 +401,8 @@ enum AIGeometryEditing {
             changed += 1
         }
         for edit in plan.edits {
-            let h = store.header(EntityID(raw: edit.entityIds[0]))!
+            // validate() rejects empty edits; skip defensively rather than crash.
+            guard let first = edit.entityIds.first, let h = store.header(EntityID(raw: first)) else { continue }
             for raw in edit.entityIds { tx.delete(EntityID(raw: raw)); changed += 1 }
             for shape in edit.replacements {
                 tx.add(EntityPrototype(type: shape.entityType, layerId: h.layerId, aci: h.aci,

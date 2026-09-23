@@ -4,7 +4,7 @@ This changelog tracks the `michaeljabbour/NovaCAD-Mac` fork. A version here
 describes a fork build; it does not imply that an upstream installer or
 Homebrew release contains these changes.
 
-## 1.6.1 — Workspace navigation, ergonomics and assistant fixes
+## 1.6.2 — AI geometry editing
 
 - Let the AI inspect exact existing geometry and stage line/polyline/arc/circle
   replacements or deletions, with a before/after preview, Apply and Undo.
@@ -12,6 +12,15 @@ Homebrew release contains these changes.
 - Add staged ungrouping of editable curves from one local block instance while
   preserving notes, fills and nested blocks in a private remainder block.
   Correct assistant instructions that described editing as attribute-only.
+- Scope block extraction to at most 64 explicit curve IDs, freeze the staged
+  set, and resolve BYBLOCK color/linetype/lineweight against the parent insert.
+- Retire an unused source block definition together with its children in one
+  undoable step, so retired content cannot reappear after a later save.
+- Refuse to unpack block instances that carry attributes (visible, invisible or
+  on a nested insert), extended data, reactors, arrays, xrefs or unsupported
+  transforms; nothing is staged or changed.
+
+## 1.6.1 — Workspace navigation, ergonomics and assistant fixes
 
 - Give the AI live canvas bounds, nearby labels and bounded visible-object queries
   that follow pan, zoom, sheet changes and hidden layers.
