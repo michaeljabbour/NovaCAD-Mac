@@ -37,6 +37,7 @@ struct ContentView: View {
 
     @State private var darkBackground = true
     @State private var sidebarVisibility: NavigationSplitViewVisibility = .all
+    @State private var inspectorFooterHeight: CGFloat = 64
 
     @State private var isImporterPresented = false
     @State private var layerSearch = ""
@@ -415,11 +416,19 @@ struct ContentView: View {
                     drawingArea
                     if sidePanelVisible { workspaceSidePanel }
                 }
-                StatusBarView(settings: settings, document: document, isLoading: isLoading,
-                              recoveryStatus: session.workspaceError ?? session.recoveryStatus,
-                              issueCount: drawingIssues.count,
-                              onShowIssues: { inspector = .issues }, onShowQuality: { inspector = .quality })
-                if document != nil { commandBar }
+                VStack(spacing: 0) {
+                    StatusBarView(settings: settings, document: document, isLoading: isLoading,
+                                  recoveryStatus: session.workspaceError ?? session.recoveryStatus,
+                                  issueCount: drawingIssues.count,
+                                  onShowIssues: { inspector = .issues }, onShowQuality: { inspector = .quality })
+                    if document != nil { commandBar }
+                }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { inspectorFooterHeight = $0 }
+            }
+            // NavigationSplitView hosts its detail in a separate view tree.
+            // Resolve its button anchors here, before that hosting boundary.
+            .overlayPreferenceValue(WorkspaceAnchorPreference.self) { anchors in
+                inspectorOverlay(anchors, statusInspector: true)
             }
         }
         }
@@ -434,7 +443,7 @@ struct ContentView: View {
             }
         }
         .overlayPreferenceValue(WorkspaceAnchorPreference.self) { anchors in
-            inspectorOverlay(anchors)
+            inspectorOverlay(anchors, statusInspector: false)
         }
         .onChange(of: selection) { _, ids in
             if !ids.isEmpty && !searchVisible { sidePanelVisible = true }
@@ -1041,13 +1050,15 @@ struct ContentView: View {
     private var unitNotice: String? { document.flatMap { DrawingDiagnostics.unitNotice(in: $0) } }
     private var drawingIssues: [String] { (document?.renderingWarnings ?? []) + [unitNotice].compactMap { $0 } }
 
-    private func inspectorOverlay(_ anchors: [WorkspaceAnchor: Anchor<CGRect>]) -> some View {
+    private func inspectorOverlay(_ anchors: [WorkspaceAnchor: Anchor<CGRect>], statusInspector: Bool) -> some View {
         GeometryReader { proxy in
-            if let inspector {
+            if let inspector, (inspector == .issues || inspector == .quality) == statusInspector {
                 let origin = anchors[.button(inspector)].map { proxy[$0] }
                     ?? CGRect(x: proxy.size.width - 398, y: 0, width: 0, height: 0)
                 AnchoredInspector(anchor: origin, container: proxy.size,
-                    statusBar: anchors[.statusBar].map { proxy[$0] }) { inspectorCard }
+                    statusBar: anchors[.statusBar].map { proxy[$0] }
+                        ?? CGRect(x: 0, y: proxy.size.height - inspectorFooterHeight,
+                                  width: proxy.size.width, height: inspectorFooterHeight)) { inspectorCard }
             }
         }
     }
