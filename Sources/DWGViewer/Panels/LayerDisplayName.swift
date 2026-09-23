@@ -1,9 +1,25 @@
 import Foundation
 
-/// Local display aliases for common Russian architectural layer names.
+/// Local display aliases for common Russian architectural names.
 /// Unknown text is retained; identifiers in the document are never renamed.
 enum LayerDisplayName {
     private static let glossary: [(String, String)] = [
+        ("2-ШТРИХ-ШТРИХОВАЯ", "Double dash"),
+        ("КРУПНЫЙ ПУНКТИР", "Large dashed"),
+        ("МЕТАЛЛ   ТВЕРДЫЙ СПЛАВ", "Metal - hard alloy"),
+        ("ЛИНИИ НАКЛОННЫЕ  ШАГ", "Diagonal lines - spacing"),
+        ("ШТУКАТУРКА  ГИПС", "Plaster - gypsum"),
+        ("ЖЕЛЕЗОБЕТОН", "Reinforced concrete"),
+        ("ШТРИХПУНКТИРНАЯ", "Dash-dot"),
+        ("НЕВИДИМАЯ", "Hidden"),
+        ("ШТРИХОВАЯ", "Dashed"),
+        ("С КРУГАМИ", "Circles"),
+        ("ЧЕРТЕЖ", "Drawing"),
+        ("ЧЕРТЁЖ", "Drawing"),
+        ("ЛИНИЯ", "Line"),
+        ("КИРПИЧ", "Brick"),
+        ("КОВЕР", "Carpet"),
+        ("СЕТКА", "Grid"),
         ("РАЗМЕРЫ ВЫНОСКИ ПРИМЕЧАНИЯ", "Dimensions & notes"),
         ("РОЗЕТКИ НАКЛАДНЫЕ ВЫДВИЖНЫЕ", "Surface / retractable outlets"),
         ("УСЛОВНЫЕ ОБОЗНАЧЕНИЯ СКРЫТЬ", "Legend symbols (hide)"),
@@ -66,6 +82,10 @@ enum LayerDisplayName {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
         return query.isEmpty || name.localizedCaseInsensitiveContains(query)
             || (englishAlias(for: name)?.localizedCaseInsensitiveContains(query) ?? false)
+    }
+
+    static func display(_ name: String, inEnglish: Bool) -> String {
+        inEnglish ? englishAlias(for: name) ?? name : name
     }
 }
 

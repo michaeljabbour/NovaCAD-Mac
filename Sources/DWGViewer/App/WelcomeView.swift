@@ -134,12 +134,12 @@ struct WelcomeView: View {
 /// changelog; older entries should be trimmed as they stop being "new."
 enum WhatsNew {
     static let recentHighlights: [String] = [
+        "Read English names throughout layer and block controls, with original names available on hover.",
         "Use a full-width ribbon with clear tool buttons; hide it with the chevron or ⌥⌘R for more drawing space.",
         "Reopen unchanged DWGs without launching the converter again.",
         "Use the File menu to open recent drawings, save edits, recover unsaved work, and export selected sheets to PDF.",
         "Reopen drawings at your last sheet and zoom, or save named views with their layer visibility.",
         "View linked images and 2D paper viewports, with clear notices when drawing content is missing or unsupported.",
-        "Your edits get automatic recovery copies without overwriting the original drawing."
 
     ]
 }

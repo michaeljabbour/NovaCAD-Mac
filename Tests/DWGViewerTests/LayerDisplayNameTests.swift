@@ -2,6 +2,15 @@ import XCTest
 @testable import DWGViewer
 
 final class LayerDisplayNameTests: XCTestCase {
+    func testBlockAndPatternAliasesPreserveDistinctIdentifiers() {
+        XCTAssertEqual(LayerDisplayName.englishAlias(for: "Чертеж_32_2"), "Drawing 32 2")
+        XCTAssertEqual(LayerDisplayName.englishAlias(for: "Чертеж_33_1"), "Drawing 33 1")
+        XCTAssertEqual(LayerDisplayName.englishAlias(for: "Линия_1"), "Line 1")
+        XCTAssertEqual(LayerDisplayName.englishAlias(for: "ШТУКАТУРКА__ГИПС_03_0001"), "Plaster - gypsum 03 0001")
+        XCTAssertTrue(LayerDisplayName.matches("Чертеж_32_2", search: "drawing 32"))
+        XCTAssertEqual(LayerDisplayName.display("Чертеж_32_2", inEnglish: false), "Чертеж_32_2")
+    }
+
     func testEnglishAliasesKeepNumbersAndXrefNames() {
         XCTAssertEqual(LayerDisplayName.englishAlias(for: "ОФИС|05 - МЕБЕЛЬ"), "ОФИС|05 - Furniture")
         XCTAssertEqual(LayerDisplayName.englishAlias(for: "01 - СТЕНЫ СУЩЕСТВУЮЩИЕ 1"), "01 - Existing walls 1")

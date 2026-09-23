@@ -48,6 +48,10 @@ final class SearchIndex {
             id < document.layers.count ? document.layers[id].name : "?"
         }
 
+        func searchTerms(_ name: String) -> String {
+            [name, LayerDisplayName.englishAlias(for: name) ?? ""].joined(separator: "\n").lowercased()
+        }
+
         func indexGroups(_ groups: [RenderGroup], isPaper: Bool) {
             for (gi, g) in groups.enumerated() {
                 for (ti, t) in g.texts.enumerated() {
@@ -58,7 +62,7 @@ final class SearchIndex {
                         ? .insert(t.insertId)
                         : .primitive(group: Int32(gi), store: .text, index: Int32(ti))
                     entries.append(Entry(
-                        lower: display.lowercased(),
+                        lower: searchTerms(display),
                         display: display,
                         sublabel: "\(t.kind.label) · \(layerName(g.layerId))",
                         position: t.position,
@@ -86,7 +90,7 @@ final class SearchIndex {
             let sublabel = "Block Reference · \(layerName(Int(ins.layerId)))"
             if !display.isEmpty, !display.hasPrefix("*") {
                 entries.append(Entry(
-                    lower: display.lowercased(),
+                    lower: searchTerms(display),
                     display: display,
                     sublabel: sublabel,
                     position: ins.position,
@@ -96,7 +100,7 @@ final class SearchIndex {
             }
             if let shown, !shown.isEmpty, shown != display {
                 entries.append(Entry(
-                    lower: shown.lowercased(),
+                    lower: searchTerms(shown),
                     display: shown,
                     sublabel: sublabel,
                     position: ins.position,

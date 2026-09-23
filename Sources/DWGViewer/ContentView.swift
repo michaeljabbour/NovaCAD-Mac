@@ -10,6 +10,7 @@ enum SpaceSelection: String, CaseIterable, Identifiable {
 }
 
 struct ContentView: View {
+    @AppStorage("layerNamesInEnglish") private var englishNames = true
     /// Owns the document, view transform, selection, tool, and markup state
     /// for the one drawing this view is showing (relocated from what used to
     /// be ContentView's own @State — see DocumentSession.swift). One
@@ -916,7 +917,7 @@ struct ContentView: View {
                                 stampBlockName = name
                                 setDraft(.stamp)
                             } label: {
-                                Label(name, systemImage: stampBlockName == name
+                                Label(LayerDisplayName.display(name, inEnglish: englishNames), systemImage: stampBlockName == name
                                       ? "checkmark.square" : "square.on.square")
                             }
                         }
@@ -933,7 +934,7 @@ struct ContentView: View {
                             Button {
                                 startInsert(blockName: name)
                             } label: {
-                                Label(name, systemImage: "cube.transparent")
+                                Label(LayerDisplayName.display(name, inEnglish: englishNames), systemImage: "cube.transparent")
                             }
                         }
                     } label: {
@@ -1502,9 +1503,9 @@ struct ContentView: View {
                             goTo(hit: hit)
                         } label: {
                             HStack {
-                                Text(hit.label).lineLimit(1)
+                                Text(LayerDisplayName.display(hit.label, inEnglish: englishNames)).lineLimit(1)
                                 Spacer()
-                                Text(hit.sublabel)
+                                Text(LayerDisplayName.display(hit.sublabel, inEnglish: englishNames))
                                     .font(.caption2).foregroundColor(.secondary)
                             }
                             .contentShape(Rectangle())

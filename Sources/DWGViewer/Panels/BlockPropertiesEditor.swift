@@ -36,6 +36,7 @@ import SwiftUI
 ///   same point, which is almost never what's wanted (MOVE with a delta is
 ///   the right tool for that, and already exists).
 struct BlockPropertiesEditor: View {
+    @AppStorage("layerNamesInEnglish") private var englishNames = true
     @ObservedObject var session: DocumentSession
     let insertId: EntityID
     /// Units/precision for displaying and parsing the geometry fields — the
@@ -142,12 +143,15 @@ struct BlockPropertiesEditor: View {
                 // show blank and the first real edit would silently retarget
                 // the object.
                 if !blockNames.contains(current) {
-                    Text(current.isEmpty ? "(none)" : current).tag(current)
+                    Text(current.isEmpty ? "(none)" : LayerDisplayName.display(current, inEnglish: englishNames)).tag(current)
                 }
-                ForEach(blockNames, id: \.self) { Text($0).tag($0) }
+                ForEach(blockNames, id: \.self) { name in
+                    Text(LayerDisplayName.display(name, inEnglish: englishNames)).tag(name)
+                }
             }
             .labelsHidden()
             .font(.callout)
+            .help(current)
         }
         .padding(.horizontal, 10).padding(.vertical, 6)
         Divider().padding(.leading, 10)

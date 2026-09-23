@@ -65,7 +65,7 @@ Known rendering/export limits are documented in README.md.
 [X] **Explode on stamp** — symbol explodes to markup lines (not INSERT references)
 
 ## Layer Management
-[X] **English layer display names** — local aliases for common Russian architectural layer terms, searchable in either language without changing source names
+[X] **English drawing labels** — local aliases for common Russian layer, block, line-type and hatch names in controls and search; original names remain in tooltips and Original mode without changing identifiers
 [X] **Bulk visibility and reversible isolation** — Show/Hide/Isolate for selected layers or search results; Restore preserves the previous hidden-layer set
 [X] **Named paper-sheet selection** — render one layout at a time; preserve all layout blocks and paper ownership when saving
 [X] **Layer panel** — show/hide (freeze/thaw) any layer, color swatches, entity counts, search filter

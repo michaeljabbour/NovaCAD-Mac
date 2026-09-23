@@ -9,6 +9,7 @@ import SwiftUI
 /// private state directly. Shown when the current selection is NOT markup
 /// (see `MarkupPropertiesPanel` below for the editable markup counterpart).
 struct PropertiesPanel: View {
+    @AppStorage("layerNamesInEnglish") private var englishNames = true
     @ObservedObject var session: DocumentSession
     let document: DXFDocument?
     let selectionCount: Int
@@ -244,7 +245,7 @@ struct PropertiesPanel: View {
                                 Text(EntityProperty.variesValue).tag(EntityProperty.variesValue)
                             }
                             ForEach(layerNames, id: \.self) { name in
-                                Text(name).tag(name)
+                                Text(LayerDisplayName.display(name, inEnglish: englishNames)).tag(name)
                             }
                         }
                         .labelsHidden()
@@ -299,7 +300,7 @@ struct PropertiesPanel: View {
                             Text(prop.name)
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                            Text(prop.value)
+                            Text(LayerDisplayName.display(prop.value, inEnglish: englishNames))
                                 .font(.callout)
                                 .foregroundColor(prop.value == EntityProperty.variesValue
                                                  ? .orange : .primary)

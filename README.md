@@ -184,7 +184,9 @@ which requires a paid Developer ID.
   entity counts, and search in original names or local English aliases for
   common Russian CAD terms. Select multiple rows to show, hide, or isolate
   them together; Restore returns to the visibility state before isolation.
-  Original layer names remain unchanged in the drawing.
+  **Drawing labels → English** also applies to block pickers, properties,
+  and search results. Original names are available on hover and in Original
+  mode; the display preference does not rename identifiers in the drawing.
 - **Paper sheets** — choose one named layout from the Sheet menu beside
   Model/Paper; other sheets stay separate and are retained when saving.
   The empty External References panel no longer takes space from the layers.

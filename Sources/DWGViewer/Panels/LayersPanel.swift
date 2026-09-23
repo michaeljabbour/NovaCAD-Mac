@@ -413,16 +413,16 @@ struct LayersPanel: View {
             .padding(.bottom, 4)
 
             HStack {
-                Text("Layer names").font(.caption).foregroundColor(.secondary)
+                Text("Drawing labels").font(.caption).foregroundColor(.secondary)
                 Spacer()
-                Picker("Layer names", selection: $englishNames) {
+                Picker("Drawing labels", selection: $englishNames) {
                     Text("English").tag(true)
                     Text("Original").tag(false)
                 }
                 .labelsHidden()
                 .pickerStyle(.segmented)
                 .frame(width: 165)
-                .help("English aliases for common Russian CAD terms; original layer names are preserved")
+                .help("English names in layer and block controls; original names remain available in tooltips and Original mode")
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
@@ -580,9 +580,6 @@ struct LayersPanel: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .foregroundColor(isOn ? (isLocked ? .secondary : .primary) : .secondary)
                 HStack(spacing: 6) {
-                    if englishNames, LayerDisplayName.englishAlias(for: layer.name) != nil {
-                        Text(originalDisplayName(layer)).lineLimit(1)
-                    }
                     Spacer(minLength: 2)
                     Text("\((sheetUsage[layer.id]?.count ?? 0).formatted()) objects").fixedSize()
                 }
