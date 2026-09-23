@@ -83,7 +83,12 @@ public struct DWGConverter {
 
         let open = Process()
         open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        // Qt can activate itself even after LaunchServices starts it hidden.
+        // Scope both controls to this converter process, never global defaults.
+        // See Qt cocoa qcocoaintegration.mm and qcocoawindow.mm.
         open.arguments = ["-n", "-W", "-j", "-g",
+                          "--env", "QT_MAC_DISABLE_FOREGROUND_APPLICATION_TRANSFORM=1",
+                          "--env", "QT_MAC_SET_RAISE_PROCESS=0",
                           "--stdout", outLog.path, "--stderr", errLog.path,
                           "-a", appBundle.path, "--args"] + arguments
         // This pipe captures `open`'s own launch errors; the converter's output

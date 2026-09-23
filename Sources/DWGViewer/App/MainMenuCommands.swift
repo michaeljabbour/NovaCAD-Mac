@@ -74,6 +74,7 @@ extension FocusedValues {
 /// below is simply disabled, matching how the existing toolbar Menu already
 /// disables itself via `.disabled(document == nil || isLoading)`.
 struct MainMenuCommands: Commands {
+    @AppStorage("ribbonCollapsed") private var ribbonCollapsed = false
     @FocusedValue(\.novaCADCommandDispatch) private var dispatch: CommandDispatch?
 
     @FocusedValue(\.novaCADFileDispatch) private var fileDispatch: FileDispatch?
@@ -111,14 +112,7 @@ struct MainMenuCommands: Commands {
         // menus — matches native macOS app conventions (every app has
         // exactly one File/Edit/View menu).
         //
-        // `.file` now has real content (Phase 3.2: SAVE/SAVEAS) — this
-        // CommandGroup was previously omitted entirely (an always-empty
-        // `.file` group would have rendered an orphan `Divider()` with
-        // nothing under it, the same "dead menu scaffolding" bug already
-        // fixed above for `.tools`; see git history). No explicit
-        // `.keyboardShortcut` on these items — the toolbar's own Save/Save
-        // As buttons already own the real ⌘S/⇧⌘S bindings (same
-        // no-duplicate-shortcut pattern as the Edit menu's Undo item below).
+        // Shared File actions own their standard keyboard shortcuts.
         CommandGroup(replacing: .newItem) { FileMenuItems(dispatch: fileDispatch) }
         CommandGroup(replacing: .saveItem) { }
         CommandGroup(replacing: .undoRedo) {
@@ -144,6 +138,8 @@ struct MainMenuCommands: Commands {
         }
         CommandGroup(after: .toolbar) {
             Divider()
+            Button(ribbonCollapsed ? "Show Ribbon" : "Hide Ribbon") { ribbonCollapsed.toggle() }
+                .keyboardShortcut("r", modifiers: [.command, .option])
             menuItems(for: .view)
         }
         // Cross-drawing Copy/Paste (new feature). `replacing: .pasteboard`

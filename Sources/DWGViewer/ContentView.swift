@@ -35,6 +35,7 @@ struct ContentView: View {
     @State private var showingPDFExport = false
 
     @State private var darkBackground = true
+    @State private var sidebarVisibility: NavigationSplitViewVisibility = .all
 
     @State private var isImporterPresented = false
     @State private var layerSearch = ""
@@ -398,7 +399,10 @@ struct ContentView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        VStack(spacing: 0) {
+        RibbonView(dispatch: commandDispatch, activeAction: activeRibbonAction,
+                   activeToolLabel: currentToolLabel, extras: ribbonExtras)
+        NavigationSplitView(columnVisibility: $sidebarVisibility) {
             LayersPanel(
                 document: document,
                 isLoading: isLoading,
@@ -422,9 +426,6 @@ struct ContentView: View {
                 .navigationSplitViewColumnWidth(min: 300, ideal: 370, max: 560)
         } detail: {
             VStack(spacing: 0) {
-                toolbar
-                Divider()
-                RibbonView(dispatch: commandDispatch)
                 HStack(spacing: 0) {
                     drawingArea
                     if !selectedMarkupIDs.isEmpty {
@@ -486,6 +487,19 @@ struct ContentView: View {
                               }, recoveryStatus: session.workspaceError ?? session.recoveryStatus,
                               onLocateImages: locateImagesFolder)
                 if document != nil { commandBar }
+            }
+        }
+        .toolbar(removing: .sidebarToggle)
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .navigation) { quickAccessControls }
+            ToolbarItem(placement: .principal) { documentTitle }
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button(action: toggleSearch) { Image(systemName: "magnifyingglass") }
+                    .keyboardShortcut("f", modifiers: .command)
+                    .help("Find text and blocks (⌘F)").accessibilityLabel("Find in drawing")
+                    .disabled(document == nil || isLoading)
+                assistantToggle
             }
         }
         .frame(minWidth: 1000, minHeight: 650)
@@ -647,7 +661,14 @@ struct ContentView: View {
     /// with each other's disabled-state flags.
     private var commandDispatch: CommandDispatch {
         CommandDispatch(
-            perform: { performRegistryAction($0) },
+            perform: { action in
+                switch action {
+                case .clipboardCopy, .undo, .save, .saveAs, .zoomFit, .extractData, .importData: break
+                case .selectMode: commandFocused = false
+                default: commandFocused = true
+                }
+                performRegistryAction(action)
+            },
             performRedo: { session.redo() },
             hasDocument: document != nil,
             isLoading: isLoading,
@@ -737,71 +758,38 @@ struct ContentView: View {
         fitToView()
     }
 
-    private var toolbar: some View {
-        HStack(spacing: 12) {
-            // Wrapped in a horizontal ScrollView so this row's ~20 buttons
-            // stay reachable (scroll instead of silently clip) on any
-            // window width below their natural total size — see
-            // DWGViewerApp.swift's `.frame(minWidth:)` comment for the
-            // full "regardless of window size" fix this is one half of.
-            ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
+    private var quickAccessControls: some View {
+        HStack(spacing: 10) {
+            Button {
+                sidebarVisibility = sidebarVisibility == .detailOnly ? .all : .detailOnly
+            } label: { Image(systemName: "sidebar.left") }
+                .help("Show or hide layers").accessibilityLabel("Toggle layers sidebar")
             Menu("File") { FileMenuItems(dispatch: fileDispatch) }
-                .fixedSize()
-            Menu("Views") {
-                Button("Save View Preset…", action: saveViewPreset)
-                ForEach(session.presets) { preset in
-                    Button(preset.name) { handleSpaceChanged(); _ = session.restoreWorkspace(preset.workspace) }
-                }
-                if !session.presets.isEmpty {
-                    Menu("Delete Preset") {
-                        ForEach(session.presets) { preset in
-                            Button(preset.name) { session.deletePreset(preset.id) }
-                        }
-                    }
-                }
-            }.disabled(document == nil || isLoading)
-            Button("Open File…") { isImporterPresented = true }
-                .disabled(isLoading)
-
-            Button {
-                saveDrawing()
-            } label: { Image(systemName: "square.and.arrow.down") }
-                .help("Save (⌘S) — writes every edit (moves, blocks, arrays, new entities, etc.) back to the DXF file")
+                .fixedSize().fontWeight(.semibold)
+            Button(action: saveDrawing) { Image(systemName: "square.and.arrow.down") }
+                .help("Save (⌘S)").accessibilityLabel("Save")
                 .disabled(document == nil || isLoading)
+            Button(action: undoLast) { Image(systemName: "arrow.uturn.backward") }
+                .keyboardShortcut("z", modifiers: .command)
+                .help("Undo (⌘Z)").accessibilityLabel("Undo").disabled(!session.canUndo)
+            Button { session.redo() } label: { Image(systemName: "arrow.uturn.forward") }
+                .keyboardShortcut("z", modifiers: [.command, .shift])
+                .help("Redo (⇧⌘Z)").accessibilityLabel("Redo").disabled(!session.canRedo)
+        }.buttonStyle(.borderless).controlSize(.regular)
+    }
 
-            Button {
-                saveDrawingAs()
-            } label: { Image(systemName: "square.and.arrow.down.on.square") }
-                .help("Save As… (⇧⌘S)")
-                .disabled(document == nil || isLoading)
-
-            Button {
-                fitButtonPressed()
-            } label: { Label("Fit", systemImage: "arrow.up.left.and.arrow.down.right") }
-                .help("Fit main content; press again for full extents")
-                .disabled(document == nil || isLoading)
-
-            Button { zoomAtCenter(by: 1.7) } label: { Image(systemName: "plus.magnifyingglass") }
-                .disabled(document == nil || isLoading)
-            Button { zoomAtCenter(by: 0.59) } label: { Image(systemName: "minus.magnifyingglass") }
-                .disabled(document == nil || isLoading)
-
-            Toggle(isOn: $darkBackground) {
-                Image(systemName: darkBackground ? "moon.fill" : "sun.max")
+    private var documentTitle: some View {
+        HStack(spacing: 6) {
+            Text(currentSourceURL?.lastPathComponent ?? "Open a drawing")
+                .font(.system(size: 12, weight: .medium)).lineLimit(1).truncationMode(.middle)
+                .help(currentSourceURL?.path ?? "Open a drawing to begin")
+            if session.hasUnsavedChanges {
+                Circle().fill(.secondary).frame(width: 6, height: 6).help("Unsaved changes")
             }
-            .toggleStyle(.button)
-            .help("Toggle dark/light canvas")
+        }.frame(maxWidth: 360)
+    }
 
-            Button {
-                showUnitsPopover.toggle()
-            } label: {
-                Label("Units", systemImage: "ruler.fill")
-            }
-            .help("Measurement units & format")
-            .popover(isPresented: $showUnitsPopover) { unitsPopover }
-            .disabled(document == nil)
-
+    private var assistantToggle: some View {
             Toggle(isOn: $showAIAssistant) {
                 Label("AI Assistant", systemImage: "sparkles")
             }
@@ -839,6 +827,9 @@ struct ContentView: View {
                 }
             }
 
+    }
+
+    private var allToolsMenu: some View {
             Menu {
                 Button { setTool(select: true) } label: {
                     Label("Select", systemImage: "cursorarrow")
@@ -998,57 +989,128 @@ struct ContentView: View {
                     Label("Import Data…", systemImage: "square.and.arrow.down.on.square.fill")
                 }
             } label: {
-                Label(currentToolLabel, systemImage: currentToolIcon)
+                Label("All tools", systemImage: "square.grid.2x2")
             }
-            .frame(width: 170)
+            .fixedSize()
             .disabled(document == nil || isLoading)
 
-            markupColorMenu
 
-            Button {
-                undoLast()
-            } label: { Image(systemName: "arrow.uturn.backward") }
-                .keyboardShortcut("z", modifiers: .command)
-                .help("Undo (⌘Z, or U in the command line)")
-                .disabled(!session.canUndo)
+    }
 
-            Button {
-                session.redo()
-            } label: { Image(systemName: "arrow.uturn.forward") }
-                .keyboardShortcut("z", modifiers: [.command, .shift])
-                .help("Redo (⇧⌘Z)")
-                .disabled(!session.canRedo)
-
-            Button {
-                toggleSearch()
-            } label: { Label("Search", systemImage: "magnifyingglass") }
-                .keyboardShortcut("f", modifiers: .command)
-                .help("Search drawing text and blocks (⌘F)")
-                .disabled(document == nil || isLoading)
-            }
-            }
-
-            Spacer(minLength: 0)
-
-            if isLoading {
-                ProgressView(value: loadProgress)
-                    .frame(width: 160)
-                Text(String(format: "%.0f%%", loadProgress * 100))
-                    .font(.caption).monospacedDigit()
-            } else if let doc = document {
-                Button {
-                    showFileInfo.toggle()
-                } label: {
-                    Label("\(doc.stats.totalEntities) entities",
-                          systemImage: "info.circle")
-                        .font(.caption)
+    private var savedViewsMenu: some View {
+            Menu("Saved views") {
+                Button("Save View Preset…", action: saveViewPreset)
+                ForEach(session.presets) { preset in
+                    Button(preset.name) { handleSpaceChanged(); _ = session.restoreWorkspace(preset.workspace) }
                 }
-                .buttonStyle(.plain)
-                .popover(isPresented: $showFileInfo) { fileInfoPopover(doc) }
+                if !session.presets.isEmpty {
+                    Menu("Delete Preset") {
+                        ForEach(session.presets) { preset in
+                            Button(preset.name) { session.deletePreset(preset.id) }
+                        }
+                    }
+                }
+            }.disabled(document == nil || isLoading)
+
+    }
+
+    @ViewBuilder
+    private func ribbonExtras(_ tab: RibbonTab) -> some View {
+        switch tab {
+        case .home:
+            RibbonGroup(title: "Navigate") {
+                VStack(alignment: .leading, spacing: 3) {
+                    Button(action: fitButtonPressed) { Label("Fit drawing", systemImage: "arrow.up.left.and.arrow.down.right") }
+                    Button { setMeasure(.distance) } label: { Label("Measure", systemImage: "ruler") }
+                }.buttonStyle(RibbonButtonStyle()).disabled(document == nil || isLoading)
+            }
+            RibbonGroup(title: "Tools") {
+                VStack(alignment: .leading, spacing: 6) {
+                    allToolsMenu
+                    markupColorMenu
+                }.frame(minWidth: 110, alignment: .leading)
+            }
+        case .draw, .modify:
+            RibbonGroup(title: "Properties") {
+                VStack(alignment: .leading, spacing: 6) {
+                    Button { startClayerEntry() } label: { Label("Current layer", systemImage: "square.3.layers.3d") }
+                        .buttonStyle(RibbonButtonStyle()).disabled(document == nil || isLoading)
+                    markupColorMenu
+                }.frame(minWidth: 120, alignment: .leading)
+            }
+        case .annotate:
+            RibbonGroup(title: "Format") {
+                VStack(alignment: .leading, spacing: 3) {
+                    unitsButton
+                    markupColorMenu
+                }.frame(minWidth: 125, alignment: .leading)
+            }
+        case .view:
+            RibbonGroup(title: "Zoom") {
+                VStack(alignment: .leading, spacing: 3) {
+                    Button(action: fitButtonPressed) { Label("Fit drawing", systemImage: "arrow.up.left.and.arrow.down.right") }
+                    HStack(spacing: 0) {
+                        Button { zoomAtCenter(by: 1.7) } label: { Label("In", systemImage: "plus.magnifyingglass") }
+                        Button { zoomAtCenter(by: 0.59) } label: { Label("Out", systemImage: "minus.magnifyingglass") }
+                    }
+                }.buttonStyle(RibbonButtonStyle()).disabled(document == nil || isLoading)
+            }
+            RibbonGroup(title: "Workspace") {
+                VStack(alignment: .leading, spacing: 6) {
+                    savedViewsMenu
+                    Toggle("Dark canvas", isOn: $darkBackground).toggleStyle(.checkbox)
+                }.padding(.top, 3).frame(minWidth: 140, alignment: .leading)
+            }
+            RibbonGroup(title: "Drawing") {
+                VStack(alignment: .leading, spacing: 3) {
+                    unitsButton
+                    if let doc = document {
+                        Button { showFileInfo.toggle() } label: { Label("Drawing info", systemImage: "info.circle") }
+                            .buttonStyle(RibbonButtonStyle())
+                            .popover(isPresented: $showFileInfo) { fileInfoPopover(doc) }
+                    }
+                }
+            }
+            RibbonGroup(title: "Share") {
+                VStack(alignment: .leading, spacing: 3) {
+                    Button { showingPDFExport = true } label: { Label("Export PDF", systemImage: "doc.richtext") }
+                    Button(action: saveDrawingAs) { Label("Save As…", systemImage: "square.and.arrow.down.on.square") }
+                }.buttonStyle(RibbonButtonStyle()).disabled(document == nil || isLoading)
             }
         }
-        .padding(10)
-        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var unitsButton: some View {
+        Button { showUnitsPopover.toggle() } label: { Label("Units & format", systemImage: "ruler.fill") }
+            .buttonStyle(RibbonButtonStyle())
+            .popover(isPresented: $showUnitsPopover) { unitsPopover }
+            .disabled(document == nil || isLoading)
+    }
+
+    private var activeRibbonAction: CommandAction? {
+        if modifyState.isActive { return .modify(modifyState.command) }
+        if trimExtendState.isActive { return .trimExtend(trimExtendState.command) }
+        if stretchState.isActive { return .stretch }
+        if filletChamferState.isActive { return .filletChamfer(filletChamferState.command) }
+        if offsetState.isActive { return .offset }
+        if dimensionToolState.isActive { return .dimension(dimensionToolState.kind) }
+        if blockToolState.isActive { return .blockCommand(blockToolState.command) }
+        if clipboardPasteToolState.isActive { return .clipboardPaste }
+        if arrayToolState.isActive { return .array }
+        if moveState.isActive { return .moveTool }
+        if explodeAwaitingSelection { return .explode }
+        if joinAwaitingSelection { return .join }
+        if awaitingAttEditPick { return .attedit }
+        if awaitingAttdefPlacement { return .attdef }
+        if xrefAttachToolState.isActive { return nil }
+        if draft.isActive { return .tool(draft.mode) }
+        switch measure.mode {
+        case .distance: return .measureDistance
+        case .area: return .measureArea
+        case .radius: return .measureRadius
+        case .angle: return .measureAngle
+        case .select: return .selectMode
+        }
     }
 
     private var unitsPopover: some View {
@@ -1226,11 +1288,19 @@ struct ContentView: View {
                 } else {
                     Color(red: 0.13, green: 0.16, blue: 0.19)
                     if !isLoading {
-                        VStack(spacing: 10) {
-                            Image(systemName: "doc.badge.plus").font(.largeTitle)
-                            Text("Open a DXF or DWG file to view the drawing.")
+                        VStack(alignment: .leading, spacing: 14) {
+                            Label("NovaCAD", systemImage: "square.3.layers.3d")
+                                .font(.system(size: 23, weight: .semibold))
+                            Text("Open a drawing").font(.title3)
+                            Text("Explore sheets, organize layers, and mark up your plans.")
+                                .foregroundStyle(.secondary)
+                            Button { isImporterPresented = true } label: {
+                                Label("Open DWG or DXF…", systemImage: "folder")
+                            }.buttonStyle(.borderedProminent).controlSize(.large)
+                            Text("You can also drop a drawing or drawing package here.")
+                                .font(.caption).foregroundStyle(.secondary)
                         }
-                        .foregroundColor(.secondary)
+                        .padding(28).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
                     }
                 }
             }
@@ -1240,7 +1310,11 @@ struct ContentView: View {
             .overlay {
                 if isLoading {
                     VStack(spacing: 12) {
-                        ProgressView(value: loadProgress) { Text("Loading…") }
+                        Text(currentSourceURL?.lastPathComponent ?? "Opening drawing")
+                            .font(.headline).lineLimit(1).truncationMode(.middle).frame(width: 300)
+                        ProgressView(value: loadProgress) {
+                            Text(loadProgress < 0.08 ? "Preparing drawing…" : loadProgress < 0.8 ? "Reading drawing…" : "Preparing canvas…")
+                        }
                             .progressViewStyle(.linear)
                             .frame(width: 300)
                         Text(String(format: "%.0f%%", loadProgress * 100))
@@ -2498,8 +2572,8 @@ struct ContentView: View {
                 draft.ellipseRotationMode = false
                 draft.splineClose = false
             }
-        } else if measure.isActive, !measure.points.isEmpty || measure.hover != nil {
-            measure = MeasureState(mode: measure.mode)
+        } else if measure.isActive {
+            measure = MeasureState()
         } else if searchVisible {
             closeSearch()
         } else {
@@ -2919,6 +2993,11 @@ struct ContentView: View {
     }
 
     private var currentToolLabel: String {
+        if stretchState.isActive { return "Stretch" }
+        if explodeAwaitingSelection { return "Explode" }
+        if joinAwaitingSelection { return "Join" }
+        if awaitingAttEditPick { return "Edit attributes" }
+        if awaitingAttdefPlacement { return "Define attribute" }
         if modifyState.isActive { return modifyState.command.displayName }
         if trimExtendState.isActive { return trimExtendState.command.displayName }
         if filletChamferState.isActive { return filletChamferState.command.displayName }
@@ -3035,12 +3114,15 @@ struct ContentView: View {
                 }
             }
         } label: {
-            // Swatch of the current markup color.
-            Image(systemName: "square.fill")
-                .foregroundColor(Color(rgb: ACIPalette.rgb(forACI: markupColor)))
+            Label {
+                Text("Markup color")
+            } icon: {
+                Image(systemName: "square.fill")
+                    .foregroundColor(Color(rgb: ACIPalette.rgb(forACI: markupColor)))
+            }
         }
         .menuIndicator(.visible)
-        .frame(width: 54)
+        .fixedSize()
         .help("Markup color — draw current vs. proposed flows in different colors")
         .disabled(document == nil || isLoading)
     }

@@ -5,6 +5,11 @@ current_status = [X]
 All features listed below have been verified as implemented in the codebase.
 Known rendering/export limits are documented in README.md.
 
+## Workspace Ergonomics
+[X] **Tabbed ribbon** — full-width Home/Draw/Modify/Annotate/View groups, defined button targets and larger primary icons, responsive group menus, active-tool highlight, persistent tabs-only collapse (⌥⌘R) and selected tab
+[X] **Quick access** — File, Save, Undo/Redo, drawing filename, Find, and AI Assistant in one compact title bar; advanced tools preserved
+[X] **Quieter DWG opening** — individual files reuse persistent conversions; source edits invalidate cache, including same-size edits within a second; ODA starts hidden with Qt activation disabled
+
 ## File, Workspace & Sheets
 [X] **File menus** — native macOS and in-window menus with Open Recent, Save/Save As, reload, recovery, markup and PDF export
 [X] **Workspace memory** — per-drawing sheet/camera/visibility plus named view presets, matching layers by original name

@@ -89,7 +89,8 @@ struct DWGViewerApp: App {
                 // window size" for real rather than just raising the floor.
                 .frame(minWidth: 1150, minHeight: 700)
         }
-        .windowStyle(DefaultWindowStyle())
+        .windowStyle(.hiddenTitleBar)
+        .windowToolbarStyle(.unifiedCompact)
         .defaultSize(width: 1280, height: 800)
         // Phase 5.1: native File/Edit/View/Insert/Format/Tools/Draw/
         // Dimension/Modify menu items, sourced from CommandRegistry.all and

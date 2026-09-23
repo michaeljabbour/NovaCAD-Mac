@@ -42,6 +42,24 @@ the synthetic fixtures in `Tests/Fixtures/` — see
 
 <img src="Assets/Marketing/novacad-technical-triptych.png" width="100%" alt="Navigate, measure, and mark up — NovaCAD workflow">
 
+## Workspace ergonomics
+
+The full-width ribbon sits above both the layers sidebar and the drawing.
+It groups labeled tools into **Home**, **Draw**, **Modify**, **Annotate**,
+and **View** tabs. The active tool is highlighted; the chevron collapses the
+ribbon to tabs only for more drawing space (**⌥⌘R** also toggles it).
+Larger primary icons and bordered buttons make tool targets clear. Less-used
+groups collapse into menus when the window narrows. Tabs and collapse state
+are remembered.
+Save, Undo, Redo, Find, and the File menu share the title bar with the drawing
+name; there is no separate app-title row.
+Advanced commands remain under **Home → All tools** and the native menus.
+
+Individual DWGs now use the same persistent conversion cache as drawing
+packages. Reopening an unchanged drawing skips ODA entirely. Fresh conversions
+launch hidden in the background with Qt activation disabled; a converter version
+may still show its own brief splash. The installed ODA application is unchanged.
+
 ## What it is
 
 - A **fast viewer** for DXF (and DWG via a free converter), including xrefs,
@@ -56,7 +74,7 @@ the synthetic fixtures in `Tests/Fixtures/` — see
 ## What it isn't
 
 NovaCAD is not a full AutoCAD replacement and does not try to be: it writes
-DXF (not DWG), has no plot/print pipeline, no LISP, no 3D modeling, and no
+DXF (not DWG), exports sheet PDFs without CTB/STB plot styles, and has no LISP, 3D modeling, or
 cloud service. See [Known limitations](#known-limitations).
 
 ## Requirements

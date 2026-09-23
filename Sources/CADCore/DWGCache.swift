@@ -121,7 +121,7 @@ public enum DWGCache {
 
     public static func saveManifest(_ manifest: Manifest, in bucket: URL) {
         if let data = try? JSONEncoder().encode(manifest) {
-            try? data.write(to: manifestURL(in: bucket))
+            try? data.write(to: manifestURL(in: bucket), options: .atomic)
         }
     }
 
@@ -143,7 +143,7 @@ public enum DWGCache {
               entry.converter == converter,
               let st = stat(source),
               st.size == entry.size,
-              abs(st.mtime - entry.mtime) < 1.0 else { return false }
+              abs(st.mtime - entry.mtime) < 0.000001 else { return false }
         return FileManager.default.fileExists(
             atPath: bucket.appendingPathComponent(entry.dxfRelPath).path)
     }

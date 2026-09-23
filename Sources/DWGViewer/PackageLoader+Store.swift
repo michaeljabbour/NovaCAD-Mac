@@ -155,17 +155,11 @@ extension PackageLoader {
 
         // Persistent DWG→DXF cache: for a folder/zip package, converted DXFs
         // land in a stable per-package bucket and only changed DWGs
-        // re-convert on re-open. Disabled (or non-deep single-file opens)
+        // re-convert on re-open. With caching disabled, conversions
         // fall back to the original temp-dir conversion, cleaned up via
-        // `tempDirs`. `DWGCache.isEnabled` itself is `internal` to CADCore
-        // (not `public`), so this reads the exact same UserDefaults key
-        // CADCore's own `DWGCache.isEnabled` getter reads, mirroring its
-        // "default ON" semantics without needing a CADCore API change.
-        let dwgCacheEnabled: Bool = {
-            if UserDefaults.standard.object(forKey: "dwgCacheEnabled") == nil { return true }
-            return UserDefaults.standard.bool(forKey: "dwgCacheEnabled")
-        }()
-        let cacheBucket: URL? = (deepPackage && dwgCacheEnabled)
+        // `tempDirs`. Single-file opens use the same persistent cache as
+        // packages: reopening an unchanged DWG never starts the converter.
+        let cacheBucket: URL? = DWGCache.isEnabled
             ? DWGCache.bucket(forPackage: packageDir) : nil
 
         // Finder grants access to the selected file, not necessarily its
