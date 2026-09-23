@@ -126,6 +126,9 @@ Known rendering/export limits are documented in README.md.
 
 ## AI Assistant
 
+[X] **Existing geometry edits** — exact inspection and staged line/polyline/arc/circle replacement or deletion, with before/after preview, layer/style/sheet preservation, stale/locked-target validation, and one-step Undo; does not update dimensions/notes
+[X] **Instance curve ungrouping** — stage extraction of editable curves from one local planar block instance; notes/fills/nested blocks remain grouped at the original transform, other instances stay unchanged, and unsupported metadata/attributes are rejected
+
 [X] **Live canvas context** — current viewport bounds and visible text; paged `visibleOnly` queries for text, blocks and line/arc/polyline geometry, refreshed from live camera and visibility state. Bounds intersection is approximate, not screenshot recognition.
 [X] **Formatted chat** — native Markdown emphasis, headings, lists, links and fenced code; incomplete streamed Markdown remains readable
 [X] **Drawing context** — active space/sheet, paper sheet inventory and coordinate units supplied per turn; omitted tool space follows the active view

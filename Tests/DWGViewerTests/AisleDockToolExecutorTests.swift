@@ -369,7 +369,7 @@ final class AisleDockToolExecutorTests: XCTestCase {
         _ = try executor.execute(tool: "repair_aisle_network",
                                  arguments: ["layerName": "AISLE", "maxGapDistanceFeet": 30.0])
         let headerCountBefore = parsed.store.headers.count
-        let created = AIProposedGeometryApplier.apply(executor.stagedGeometry, session: session, regen: rc)
+        let created = try AIProposedGeometryApplier.apply(executor.stagedGeometry, session: session, regen: rc)
         XCTAssertGreaterThan(created, 0)
         XCTAssertGreaterThan(parsed.store.headers.count, headerCountBefore,
                             "Apply must actually write real entities to the document")
@@ -395,7 +395,7 @@ final class AisleDockToolExecutorTests: XCTestCase {
         _ = try executor.execute(tool: "shade_aisle_network",
                                  arguments: ["layerName": "AISLE", "fallbackWidthFeet": 13.0])
         XCTAssertFalse(executor.stagedGeometry.isEmpty, "sanity: shading must stage something")
-        let created = AIProposedGeometryApplier.apply(executor.stagedGeometry, session: session, regen: rc)
+        let created = try AIProposedGeometryApplier.apply(executor.stagedGeometry, session: session, regen: rc)
         XCTAssertGreaterThan(created, 0)
 
         let store = parsed.store

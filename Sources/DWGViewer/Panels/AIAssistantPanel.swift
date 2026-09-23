@@ -35,7 +35,7 @@ struct AIAssistantPanel: View {
                 Divider()
             }
             if !aiSession.stagedGeometry.isEmpty {
-                stagedGeometryCard
+                ScrollView { stagedGeometryCard }.frame(maxHeight: 280)
                 Divider()
             }
             transcript
@@ -348,12 +348,8 @@ struct AIAssistantPanel: View {
         }
     }
 
-    /// Review card for staged `AIProposedGeometry` actions (aisle repair/
-    /// route/shading, dock aprons) — sibling to `stagedEditsCard`, same
-    /// "Discard"/"Apply" shape but showing each action's one-line summary
-    /// and target layer instead of a per-attribute old→new row, since a
-    /// geometry action's payload (lines/polygons) isn't meaningfully
-    /// previewable as compact text.
+    /// Review staged creations and existing-object edits. Curve replacement
+    /// previews use the exact normalized payload that Apply will commit.
     private var stagedGeometryCard: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Proposed drawing changes").font(.subheadline).bold()
@@ -364,6 +360,11 @@ struct AIAssistantPanel: View {
                         .frame(width: 16)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(action.summary).font(.caption)
+                        if let plan = action.editPlan, !plan.edits.isEmpty {
+                            AIGeometryPreview(plan: plan).frame(height: 120)
+                            Text("Dashed: current · Solid: proposed").font(.caption2)
+                            Text("Dimensions and notes stay unchanged.").font(.caption2).foregroundColor(.secondary)
+                        }
                         Text("Layer: \(action.targetLayerName)")
                             .font(.caption2).foregroundColor(.secondary)
                     }
@@ -388,6 +389,7 @@ struct AIAssistantPanel: View {
         case .route: return "arrow.triangle.turn.up.right.diamond"
         case .aisleShading: return "square.grid.3x3.fill"
         case .dockAprons: return "shippingbox.fill"
+        case .editGeometry: return "pencil.and.outline"
         }
     }
 

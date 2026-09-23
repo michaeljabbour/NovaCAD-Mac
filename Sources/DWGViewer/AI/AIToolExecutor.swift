@@ -7,15 +7,8 @@ import CADCore
 /// each returning a plain model-friendly string) but scoped to NovaCAD's own
 /// drawing-interaction tool catalog (`AIToolSchema.tools`).
 ///
-/// Read tools (`readDrawing`/`insertAttributes`/`findInsertAtPoint`) answer
-/// directly from `RegenCoordinator`'s live render model — no state changes.
-/// `proposeAttributeEdits` is the sole "this changes something" tool, and per
-/// this feature's product decision it does NOT touch the document at all: it
-/// validates the requested edits against the live store (so the panel can
-/// show real "old → new" values) and returns them as a staged
-/// `AIProposedEdit` plan for the panel UI to display — actually applying the
-/// plan happens only via `AIProposedEditApplier.apply`, triggered by the
-/// user's own "Apply" button press, never by the tool call itself.
+/// Read tools inspect the live document. Attribute, creation and geometry-edit
+/// tools stage reviewable proposals; only the panel's Apply button mutates CAD.
 @MainActor
 final class AIToolExecutor {
     /// The live document this executor reads.
@@ -41,6 +34,7 @@ final class AIToolExecutor {
     private let selectionProvider: (() -> Set<EntityID>)?
     private let spaceProvider: (() -> SpaceID)?
     private let viewportProvider: (() -> CGRect?)?
+    private var inspectedGeometry: [Int32: UInt64] = [:]
     private var inspectedSheet: (id: UInt64, revision: UInt64, document: DXFDocument)?
 
     /// Throwing accessor used by every tool body, so a released document
@@ -241,6 +235,24 @@ final class AIToolExecutor {
                 routeLayerName: arguments["routeLayerName"] as? String,
                 filename: arguments["filename"] as? String)
 
+        case "propose_explode_block":
+            let regen = try liveRegen(), space = spaceProvider?() ?? .model
+            guard let raw = intArgument(arguments["entityId"]), let id = Int32(exactly: raw) else {
+                throw AIToolError.invalidArgument("entityId must be a block instance ID from query_entities.")
+            }
+            let count = try AIGeometryEditing.inspectBlock(EntityID(raw: id), regen: regen, visibility: visibility, space: space)
+            let plan = AIGeometryEditPlan(documentID: regen.geometryEditIdentity, revision: regen.parsed.document.revision,
+                paper: space == .paper, sheetID: regen.parsed.activePaperLayoutID, edits: [], explodeBlockIDs: [id])
+            var action = AIProposedGeometry(kind: .editGeometry,
+                summary: "Ungroup \(count) editable curves from block #\(id). Notes, fills and nested blocks stay grouped. Other instances stay unchanged.",
+                targetLayerName: "Preserve child layers", space: space, replaceExistingLayerContent: false)
+            action.editPlan = plan
+            stagedGeometry.append(action)
+            return "Staged: ungroup \(count) editable curves from this instance; notes, fills and nested blocks stay grouped. The user must Apply before you re-query the newly editable objects, inspect their geometry and propose reshaping. The drawing is unchanged so far."
+        case "inspect_geometry":
+            return try inspectGeometry(arguments)
+        case "propose_geometry_edits":
+            return try proposeGeometryEdits(arguments)
         case "get_selected_objects":
             let space = try requestedSpace(arguments)
             return try selectedObjects(space: space)
@@ -1338,6 +1350,85 @@ final class AIToolExecutor {
                             hasMore: hasMore, nextOffset: hasMore && !countOnly ? offset + matches.count : nil,
                             rows: countOnly ? [] : matches)
         return Self.jsonString(result) ?? "{\"error\":\"failed to encode query result\"}"
+    }
+
+    private func inspectGeometry(_ arguments: [String: Any]) throws -> String {
+        let regen = try liveRegen(), space = spaceProvider?() ?? .model
+        let ids: [Int32]
+        if let json = arguments["entityIdsJSON"] as? String {
+            guard json.utf8.count <= 4096, let data = json.data(using: .utf8),
+                  let decoded = try? JSONDecoder().decode([Int32].self, from: data) else {
+                throw AIToolError.invalidArgument("entityIdsJSON must be a JSON array of entity IDs.")
+            }
+            ids = decoded
+        } else { ids = (selectionProvider?() ?? []).map(\.raw).sorted() }
+        guard !ids.isEmpty, ids.count <= 16, Set(ids).count == ids.count else {
+            throw AIToolError.invalidArgument("Inspect 1–16 distinct object IDs at a time, or select those objects first.")
+        }
+        struct Row: Encodable { var entityId: Int32; var layer: String?; var geometry: AIGeometryShape?; var unavailableReason: String? }
+        var rows: [Row] = []
+        var accepted: [Int32] = []
+        for raw in ids {
+            do {
+                let shape = try AIGeometryEditing.inspect(EntityID(raw: raw), regen: regen, visibility: visibility, space: space)
+                let h = regen.parsed.store.header(EntityID(raw: raw))!
+                rows.append(Row(entityId: raw, layer: regen.parsed.layers[Int(h.layerId)].name, geometry: shape))
+                accepted.append(raw)
+            } catch { rows.append(Row(entityId: raw, unavailableReason: error.localizedDescription)) }
+        }
+        let result = try AIContextBudget.checkedToolResult(Self.jsonString(rows) ?? "[]")
+        // Inspection only counts if its precise geometry fit in the response.
+        for raw in accepted { inspectedGeometry[raw] = regen.parsed.document.revision }
+        return result
+    }
+
+    private func proposeGeometryEdits(_ arguments: [String: Any]) throws -> String {
+        let regen = try liveRegen(), space = spaceProvider?() ?? .model
+        guard let json = arguments["editsJSON"] as? String, json.utf8.count <= 32_768,
+              let data = json.data(using: .utf8),
+              var edits = try? JSONDecoder().decode([AIGeometryEditPlan.Edit].self, from: data),
+              !edits.isEmpty, edits.count <= 16 else {
+            throw AIToolError.invalidArgument("editsJSON must contain 1–16 edits with entityIds and replacements arrays (maximum 32 KiB).")
+        }
+        var seen = Set<Int32>()
+        let store = regen.parsed.store
+        for index in edits.indices {
+            let ids = edits[index].entityIds
+            guard !ids.isEmpty, ids.count <= 32, edits[index].replacements.count <= 32 else {
+                throw AIToolError.invalidArgument("Each edit needs 1–32 source IDs and at most 32 replacements.")
+            }
+            var before: [AIGeometryShape] = []
+            var template: EntityHeader?
+            for raw in ids {
+                guard seen.insert(raw).inserted,
+                      inspectedGeometry[raw] == regen.parsed.document.revision else {
+                    throw AIToolError.invalidArgument("Inspect each source with inspect_geometry at the current drawing revision before proposing edits; use each ID only once.")
+                }
+                before.append(try AIGeometryEditing.inspect(EntityID(raw: raw), regen: regen, visibility: visibility, space: space))
+                let h = store.header(EntityID(raw: raw))!
+                if let t = template {
+                    guard h.layerId == t.layerId, h.aci == t.aci, h.trueColor == t.trueColor,
+                          h.linetypeId == t.linetypeId, h.lineweight == t.lineweight, h.ltScale == t.ltScale else {
+                        throw AIToolError.invalidArgument("Objects merged into one replacement must share layer and style. Use separate edits to retain different styles.")
+                    }
+                } else { template = h }
+            }
+            edits[index].before = before
+            edits[index].replacements = try edits[index].replacements.map { try $0.normalized() }
+        }
+        guard seen.count <= 64, edits.reduce(0, { $0 + $1.replacements.count }) <= 64 else {
+            throw AIToolError.invalidArgument("A proposal is limited to 64 source objects and 64 replacement shapes.")
+        }
+        let plan = AIGeometryEditPlan(documentID: regen.geometryEditIdentity, revision: regen.parsed.document.revision,
+            paper: space == .paper, sheetID: regen.parsed.activePaperLayoutID, edits: edits)
+        let layers = Set(seen.compactMap { store.header(EntityID(raw: $0)) }.map { regen.parsed.layers[Int($0.layerId)].name }).sorted()
+        let count = edits.reduce(0) { $0 + $1.replacements.count }
+        let summary = "Replace \(seen.count) object(s) with \(count) shape(s)"
+        var action = AIProposedGeometry(kind: .editGeometry, summary: summary,
+            targetLayerName: layers.joined(separator: ", "), space: space, replaceExistingLayerContent: false)
+        action.editPlan = plan
+        stagedGeometry.append(action)
+        return "Staged: \(summary). A before/after preview is available. The drawing is unchanged until the user presses Apply. Apply preserves layer/style and sheet and supports Undo. Source IDs: \(seen.sorted())."
     }
 
     // MARK: - Xrefs

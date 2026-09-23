@@ -239,7 +239,8 @@ final class OpenCodeServerTests: XCTestCase {
                               "analyze_aisle_network", "repair_aisle_network",
                               "find_route_endpoints", "route_along_aisles", "export_travel_distances",
                               "shade_aisle_network", "shade_dock_aprons",
-                              "get_selected_objects", "draw_polylines", "query_entities", "inspect_xrefs"])
+                              "get_selected_objects", "draw_polylines", "query_entities", "inspect_xrefs",
+                              "inspect_geometry", "propose_geometry_edits", "propose_explode_block"])
     }
 
     /// Guards the exact three-way drift this codebase's own comments warn

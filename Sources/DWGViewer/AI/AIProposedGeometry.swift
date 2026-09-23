@@ -2,28 +2,10 @@ import Foundation
 import CoreGraphics
 import CADCore
 
-// MARK: - AI Assistant: staged geometry-creation actions
-//
-// Sibling to `AIProposedEdit` (attribute value changes) for the aisle/dock
-// tool catalog's WRITE half: `repair_aisle_network`, `route_along_aisles`,
-// `shade_aisle_network`, `shade_dock_aprons` all CREATE geometry rather than
-// edit an existing attribute, so they need their own staged-action shape —
-// but the same governing product decision applies without exception: the
-// assistant never touches the document itself. Every one of these tools
-// computes its result eagerly (against `AisleNetwork`/`DockAprons`, both
-// pure and fast enough to run synchronously inside the tool call) and stages
-// the geometry as an `AIProposedGeometry`, which the panel UI shows for
-// review; only the user's "Apply" commits it, as one undoable transaction,
-// exactly mirroring `AIProposedEditApplier`.
-//
-// Staging the ALREADY-COMPUTED geometry (not just "a promise to compute it
-// later") is a deliberate choice: it means what the user reviews in the
-// panel is EXACTLY what gets drawn — no re-derivation gap between proposal
-// and apply that could silently disagree if the document changed in
-// between. The one exception is entity IDs referenced for context (e.g.
-// which layer to draw on) are re-resolved by name at apply time, since a
-// layer index from `RegenCoordinator` is a rebuild-time-transient int, not a
-// stable id — see `AIProposedGeometryApplier.apply`.
+// Attribute edits and geometry changes share the same stage/review/Apply model.
+// Creation tools precompute their output. Existing-object edits carry normalized
+// replacements plus a document/revision guard. Block extraction is recomputed
+// only after that guard passes, so it cannot silently use a changed definition.
 struct AIProposedGeometry: Identifiable, Codable {
     let id: UUID
 
@@ -37,8 +19,11 @@ struct AIProposedGeometry: Identifiable, Codable {
         case aisleShading
         /// Apron fills for `shade_dock_aprons`.
         case dockAprons
+        case editGeometry
     }
     var kind: Kind
+    /// Exact replacements of inspected source objects; never a layer-wide erase.
+    var editPlan: AIGeometryEditPlan? = nil
 
     /// Human-readable one-line summary for the review card
     /// ("Bridge 10 aisle gaps", "Route: Dock 4 → Station STN-101 (312 ft)").
@@ -134,13 +119,44 @@ enum AIProposedGeometryApplier {
     /// this reuses rather than invents entity-construction conventions.
     @discardableResult
     static func apply(_ actions: [AIProposedGeometry], session: DocumentSession,
-                      regen: RegenCoordinator) -> Int {
+                      regen: RegenCoordinator) throws -> Int {
         guard !actions.isEmpty else { return 0 }
+        // Validate the complete batch before starting any transaction, including
+        // proposals accumulated across multiple tool calls or turns.
+        guard session.regen === regen else { throw AIToolError.documentUnavailable }
+        let unpacksBlocks = actions.contains { !($0.editPlan?.explodeBlockIDs ?? []).isEmpty }
+        if unpacksBlocks && actions.contains(where: { $0.editPlan == nil && $0.replaceExistingLayerContent }) {
+            throw AIToolError.invalidArgument("Apply block unpacking separately from proposals that clear a layer.")
+        }
+        var editedIDs = Set<Int32>()
+        for action in actions {
+            if let plan = action.editPlan {
+                try AIGeometryEditing.validate(plan, regen: regen, visibility: session.visibility,
+                    space: session.space == .paper ? .paper : .model)
+                for id in plan.edits.flatMap(\.entityIds) + (plan.explodeBlockIDs ?? []) {
+                    guard editedIDs.insert(id).inserted else {
+                        throw AIToolError.invalidArgument("Two proposals change the same object. Discard the older proposal first.")
+                    }
+                }
+            }
+        }
+        // A layer-clearing creation action must not erase replacement targets
+        // (or the just-created replacement) within the same batch.
+        for action in actions where action.editPlan == nil && action.replaceExistingLayerContent {
+            let layer = regen.parsed.layerIdByName[action.targetLayerName]
+            guard !editedIDs.contains(where: { regen.parsed.store.header(EntityID(raw: $0))?.layerId == layer }) else {
+                throw AIToolError.invalidArgument("A layer-clearing proposal conflicts with geometry edits on that layer. Apply these separately.")
+            }
+        }
         var created = 0
         session.performEdit("AI Assistant Geometry") { tx in
             let parsed = regen.parsed
             let store = parsed.store
             for action in actions {
+                if let plan = action.editPlan {
+                    created += AIGeometryEditing.apply(plan, tx: tx, regen: regen, visibility: session.visibility)
+                    continue
+                }
                 let layerId = MarkupStore.ensureLayer(named: action.targetLayerName, in: parsed)
                 let owner: OwnerRef = action.isPaperSpace ? .paper : .model
 
@@ -188,6 +204,7 @@ enum AIProposedGeometryApplier {
                 }
             }
         }
+        session.selection = session.selection.filter { !regen.parsed.store.isDeleted($0) }
         return created
     }
 }

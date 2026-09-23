@@ -134,11 +134,11 @@ struct WelcomeView: View {
 /// changelog; older entries should be trimmed as they stop being "new."
 enum WhatsNew {
     static let recentHighlights: [String] = [
+        "Ask the AI to reshape existing curves, review a before-and-after preview, and apply or undo the change.",
         "Ask the AI about the area you are viewing, with nearby labels and geometry.",
         "Read formatted AI replies and search other sheets without moving your drawing view.",
         "Keep the whole sheet fitted when opening side panels, with easier-to-click layer and close buttons.",
         "Return to the same zoom and position on each sheet, and after closing search.",
-        "Find matches with their surroundings visible and skip empty sheets in navigation.",
     ]
 }
 

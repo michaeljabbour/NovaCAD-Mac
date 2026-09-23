@@ -99,3 +99,26 @@ changes too. Distinguish source/test evidence from live UI claims. Report action
 findings with severity, file/line references and reproduction evidence, then give a
 retest verdict. Do not modify source or drawings, create a PR, merge, publish a
 release, or change the installed app. Local review-report files are allowed.
+
+
+## Geometry editing follow-up
+
+The assistant can now inspect exact 2D geometry and stage explicit source-object
+replacements/deletions as lines, polylines (including bulges), arcs or circles.
+The review card uses the same normalized geometry as Apply. Validation precedes
+the complete transaction: document identity/revision, sheet/space, visibility,
+locks, duplicate targets and incompatible layer-clearing proposals are checked.
+The source layer/style is retained; Undo/Redo and DXF round trips are covered.
+
+A block-instance tool extracts supported curves while preserving the remaining
+notes, fills and nested blocks in an instance-specific remainder definition.
+Shared definitions are kept when referenced; an unused source definition is
+retired undoably so orphan recovery cannot render it again in Model space.
+Attached metadata, attributes, xrefs and unsupported transforms are rejected.
+This is not unrestricted CAD automation, and dimensions/notes are not updated
+by reshaping. The user applies each proposal; no test modifies a user DWG.
+
+Retest `AIGeometryEditingTests`, the existing tool-schema parity tests and the
+full suite. The optional private fixture performs read-only block preflight;
+it does not apply, save or rewrite that drawing. Live provider/UI behavior is a
+separate check from the deterministic tool/transaction tests.

@@ -36,14 +36,7 @@ enum AIToolSchema {
         struct Items: Encodable, Equatable { let type: String }
     }
 
-    /// The NovaCAD drawing-interaction tool catalog. Read tools
-    /// (`read_drawing`/`get_insert_attributes`/`find_insert_at_point`) let
-    /// the assistant inspect the live document before proposing anything;
-    /// `propose_attribute_edits` is the ONLY tool that can change the
-    /// drawing, and per this feature's product decision it does NOT apply
-    /// anything itself — it stages a plan that the panel UI shows the user
-    /// for review, applied only when they press "Apply" (see
-    /// `AIProposedEditApplier`).
+    /// Read tools inspect the live drawing; write tools stage proposals for Apply.
     static let tools: [Tool] = [
         Tool(
             name: "read_drawing",
@@ -231,6 +224,27 @@ enum AIToolSchema {
                 "colorIndex": Property(type: "integer", description: "AutoCAD color index for the geometry; 256 = ByLayer (default)"),
                 "replaceExistingLayerContent": Property(type: "boolean", description: "If true, clear anything already on the target layer first — use when redrawing a batch so paths don't stack up (default false)")
             ], required: ["pathsJSON"])
+        ),
+        Tool(
+            name: "propose_explode_block",
+            description: "Stage ungrouping directly editable curves from ONE local block instance, with Apply and Undo. Notes, fills, unsupported curves and nested blocks remain grouped in a private remainder block. Other instances of the original block are unchanged. Use when target geometry is inside a block: find the containing root insert with query_entities(types:[insert],visibleOnly:true), explain unpacking, then stage this tool. After the user applies, re-query and inspect the new object IDs before proposing geometry edits. Supports simple uniformly scaled 2D blocks; reports unsupported metadata/display properties rather than discarding them.",
+            inputSchema: JSONSchema(properties: [
+                "entityId": Property(type: "integer", description: "Root block instance ID on the active sheet/space, from query_entities or selection.")
+            ], required: ["entityId"])
+        ),
+        Tool(
+            name: "inspect_geometry",
+            description: "Read exact editable 2D geometry for 1–16 object IDs, or the current selection if omitted. Returns points, polyline bulges/closed state, or arc/circle parameters in drawing coordinates, plus precise reasons for unsupported objects. Required before propose_geometry_edits; query_entities gives bounds, not exact geometry. Active sheet/space only.",
+            inputSchema: JSONSchema(properties: [
+                "entityIdsJSON": Property(type: "string", description: "JSON array of object IDs from query_entities/get_selected_objects, e.g. '[42,43]'. Omit to inspect the live selection.")
+            ], required: [])
+        ),
+        Tool(
+            name: "propose_geometry_edits",
+            description: "Reshape or delete inspected existing CAD objects by staging exact replacements with a before/after preview, Apply and Undo. Preserves source layer/style and sheet. Supports flat 2D line, polyline (including bulges), arc and circle. Does not change blocks, text or dimensions. Inspect every source first at the current drawing revision; merged sources must share style. Only explicit source IDs are replaced, never their whole layer. A changed drawing invalidates the proposal.",
+            inputSchema: JSONSchema(properties: [
+                "editsJSON": Property(type: "string", description: "JSON array (max 16 edits, 64 source/replacement objects total). Each edit: {entityIds:[42],replacements:[shape,...]}. Empty replacements deletes those sources. Shapes: {type:'line',points:[[x,y],[x,y]]}; {type:'polyline',points:[[x,y],...],closed:false,bulges:[0,...]} (one bulge per vertex, signed tan(sweep/4), final open bulge 0); {type:'arc',points:[[startX,startY],[throughX,throughY],[endX,endY]]}; or {type:'arc',center:[x,y],radius:r,startAngle:degrees,endAngle:degrees} CCW; {type:'circle',center:[x,y],radius:r}. Use double quotes in JSON. Coordinates are drawing units. Preserve both wall faces and openings; annotations are not updated automatically.")
+            ], required: ["editsJSON"])
         ),
         Tool(
             name: "query_entities",
