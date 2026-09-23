@@ -1191,7 +1191,8 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("File statistics").font(.headline)
             Text("Entities rendered: \(doc.stats.totalEntities)")
-            Text("Layers used in drawing: \(doc.layers.filter { $0.entityCount > 0 }.count) of \(doc.layers.count)")
+            Text("Layers used in file: \(regen?.layerIdsWithLiveEntities().count ?? doc.layers.filter { $0.entityCount > 0 }.count) of \(doc.layers.count)")
+            Text("Includes all sheets and block definitions").font(.caption).foregroundStyle(.secondary)
             Text("Layers on this \(space == .paper ? "sheet" : "model"): \(session.currentLayerUsage.count)")
             Text("Render groups: \(doc.modelGroups.count) model, \(doc.paperGroups.count) paper")
             Text(String(format: "Parse: %.1fs · Geometry: %.1fs",
@@ -1405,11 +1406,18 @@ struct ContentView: View {
             }
             .onAppear { viewSize = proxy.size }
             .onChange(of: proxy.size) { _, newSize in
-                let hadSize = viewSize.width > 1
+                let oldSize = viewSize
+                let hadSize = oldSize.width > 1
+                let wasFitted = hadSize && abs(zoom - fitZoom(for: fullBounds)) < max(zoom * 0.01, 1e-9)
                 viewSize = newSize
                 if let saved = session.pendingWorkspace { _ = session.restoreWorkspace(saved) }
                 else if searchVisible, searchResults.indices.contains(searchCursor) { performGoTo(hit: searchResults[searchCursor]) }
                 else if !hadSize { fitToView() }
+                else if wasFitted { fitButtonPressed() }
+                else {
+                    pan.width += (newSize.width - oldSize.width) / 2
+                    pan.height += (newSize.height - oldSize.height) / 2
+                }
             }
         }
     }
@@ -1454,7 +1462,7 @@ struct ContentView: View {
     }
 
     /// The "N-iteration" re-centering engine: animate pan/zoom to center the
-    /// hit, select it, and flash a halo for 1.5s.
+    /// hit, select it, and flash an outline for 3s.
     private func goTo(hit: SearchHit) {
         let wantPaper = hit.isPaper
         if (space == .paper) != wantPaper {
@@ -6721,7 +6729,7 @@ struct ContentView: View {
             hiddenLayerIds: Set(doc.layers.filter { $0.isOffByDefault || $0.isFrozen }.map(\.id)),
             hiddenXrefIds: [])
         layerSearch = ""
-        space = doc.modelGroups.isEmpty && !doc.paperGroups.isEmpty ? .paper : .model
+        space = doc.modelGroups.isEmpty && (!doc.paperGroups.isEmpty || !coordinator.parsed.paperLayouts.isEmpty) ? .paper : .model
 
         // Unresolved xrefs are already flagged per-row (orange) in the
         // External References panel (LayersPanel), but that's easy to miss
@@ -6739,7 +6747,7 @@ struct ContentView: View {
         //      count — the per-row orange flag already tells the user WHICH
         //      ones; this just makes sure at least one of them notices.
         let unresolvedCount = doc.xrefs.filter { !$0.isResolved }.count
-        if doc.modelGroups.isEmpty && doc.paperGroups.isEmpty && doc.modelImages.isEmpty && doc.paperImages.isEmpty && doc.paperViewports.isEmpty {
+        if doc.modelGroups.isEmpty && doc.paperGroups.isEmpty && doc.modelImages.isEmpty && doc.paperImages.isEmpty && doc.paperViewports.isEmpty && coordinator.parsed.paperLayouts.isEmpty {
             alertMessage = "No supported entities found in the file."
         } else if doc.stats.truncated {
             alertMessage = "Drawing was very large; some entities were omitted for performance."

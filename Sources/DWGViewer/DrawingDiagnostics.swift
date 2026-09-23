@@ -8,7 +8,7 @@ enum DrawingDiagnostics {
         guard [4, 5, 6].contains(document.insUnits) else { return nil }
         let hasImperialNotes = (document.modelGroups + document.paperGroups).contains { group in
             group.texts.contains { item in
-                item.text.range(of: #"(?i)\b(?:ft|feet|inches)\b|ft²|ft\^2"#, options: .regularExpression) != nil
+                item.text.range(of: #"(?i)\b(?:ft(?:2|²)?|feet|inches)\b|ft²|ft\^2"#, options: .regularExpression) != nil
             }
         }
         guard hasImperialNotes else { return nil }

@@ -50,6 +50,8 @@ final class TextLayoutRegressionTests: XCTestCase {
         let doc = Regenerator.build(from: parsed, parseSeconds: 0) { _ in }
         XCTAssertNotNil(DrawingDiagnostics.unitNotice(in: doc))
         XCTAssertEqual(doc.insUnits, 4)
+        let flattenedSquareFeet = try drawing(text: "Square, ft2")
+        XCTAssertNotNil(DrawingDiagnostics.unitNotice(in: Regenerator.build(from: flattenedSquareFeet, parseSeconds: 0) { _ in }))
         let metric = try drawing(text: "Dimensions in mm")
         XCTAssertNil(DrawingDiagnostics.unitNotice(in: Regenerator.build(from: metric, parseSeconds: 0) { _ in }))
     }

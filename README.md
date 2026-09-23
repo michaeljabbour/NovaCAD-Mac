@@ -292,6 +292,21 @@ Export all paper layouts headlessly (add `--layout "Sheet name"` for one):
 Use `--layout "A-104. Furniture Arrangement"` to render a specific named
 paper sheet. This selects paper space and the editable renderer automatically.
 
+### Workspace navigation and rendering
+
+Search lives above the canvas and automatically centers and outlines its first
+match. Previous/Next and the results menu navigate other matches. Units, Quality,
+Drawing Info, and Issues open as panels contained within the workspace. The AI
+Assistant docks beside the canvas by default; floating remains optional.
+
+MTEXT respects its reference width, and Fit Drawing includes full rotated text
+bounds. Paper-only files with empty Model space no longer show unused block
+schedules as overlapping model geometry; the unused definitions remain in the
+file. Legacy orphan-block recovery remains available for model exports and xrefs.
+Mixed coordinate and annotation units are explained in Issues and Units & Format;
+annotation labels never change the measurement scale.
+
+
 ## Xrefs & eTransmit
 
 - Open an eTransmit ZIP directly: it's extracted, the main drawing is
@@ -430,17 +445,3 @@ sponsored by Autodesk, Inc. AutoCAD and DWG are trademarks of Autodesk, Inc.
 ODA File Converter is a product of the Open Design Alliance. Apple and macOS
 are trademarks of Apple Inc. All other trademarks are the property of their
 respective owners.
-
-### Workspace navigation and rendering
-
-Search lives above the canvas and automatically centers and outlines its first
-match. Previous/Next and the results menu navigate other matches. Units, Quality,
-Drawing Info, and Issues open as panels contained within the workspace. The AI
-Assistant docks beside the canvas by default; floating remains optional.
-
-MTEXT respects its reference width, and Fit Drawing includes full rotated text
-bounds. Paper-only files with empty Model space no longer show unused block
-schedules as overlapping model geometry; the unused definitions remain in the
-file. Legacy orphan-block recovery remains available for model exports and xrefs.
-Mixed coordinate and annotation units are explained in Issues and Units & Format;
-annotation labels never change the measurement scale.

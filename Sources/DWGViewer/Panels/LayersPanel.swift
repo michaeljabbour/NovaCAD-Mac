@@ -419,7 +419,7 @@ struct LayersPanel: View {
             Toggle("Only layers on this \(space == .paper ? "sheet" : "model")", isOn: $currentSheetOnly)
                 .font(.caption).toggleStyle(.checkbox)
                 .padding(.horizontal, 10).padding(.bottom, 6)
-            Text("\(sheetUsage.count) on this \(space == .paper ? "sheet" : "model") · \(doc.layers.filter { $0.entityCount > 0 }.count) used in drawing")
+            Text("\(sheetUsage.count) on this \(space == .paper ? "sheet" : "model") · \(liveLayerIds?.count ?? doc.layers.filter { $0.entityCount > 0 }.count) used in file")
                 .font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 10)
             if let markup = doc.layers.first(where: { $0.name == "NOVACAD-MARKUP" }), sheetUsage[markup.id] == nil {
                 Text("Markup layer has no objects here").font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 10)
@@ -442,26 +442,28 @@ struct LayersPanel: View {
                 .padding(.bottom, 6)
             }
 
-            List {
-                if grouped.xrefGroups.isEmpty {
-                    ForEach(grouped.host) { layer in layerRow(layer) }
-                } else if !grouped.host.isEmpty {
-                    Section {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 2) {
+                    if grouped.xrefGroups.isEmpty {
                         ForEach(grouped.host) { layer in layerRow(layer) }
-                    } header: {
-                        Text(grouped.xrefGroups.isEmpty ? "" : "Host layers")
+                    } else if !grouped.host.isEmpty {
+                        Section {
+                            ForEach(grouped.host) { layer in layerRow(layer) }
+                        } header: {
+                            Text(grouped.xrefGroups.isEmpty ? "" : "Host layers")
+                        }
+                    }
+                    ForEach(grouped.xrefGroups, id: \.0.id) { pair in
+                        Section {
+                            ForEach(pair.1) { layer in layerRow(layer) }
+                        } header: {
+                            Label(pair.0.blockName, systemImage: "link")
+                                .font(.caption)
+                        }
                     }
                 }
-                ForEach(grouped.xrefGroups, id: \.0.id) { pair in
-                    Section {
-                        ForEach(pair.1) { layer in layerRow(layer) }
-                    } header: {
-                        Label(pair.0.blockName, systemImage: "link")
-                            .font(.caption)
-                    }
-                }
+                .padding(8)
             }
-            .listStyle(.sidebar)
             // Prune selected layer ids that filtered out (e.g. the user
             // types a search that hides them, or the layer was deleted).
             .onChange(of: visibleLayers.map(\.id)) { _, stillPresent in
@@ -475,7 +477,7 @@ struct LayersPanel: View {
         let targets = selectedLayerIds.isEmpty ? Set(visibleLayers.map(\.id)) : selectedLayerIds
         return VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(selectedLayerIds.isEmpty ? "\(targets.count) matching layers" : "\(targets.count) selected layers")
+                Text(selectedLayerIds.isEmpty ? "\(targets.count) matching layers" : "\(targets.count) selected \(targets.count == 1 ? "layer" : "layers")")
                     .font(.caption).foregroundColor(.secondary)
                 Spacer()
                 if !selectedLayerIds.isEmpty {
