@@ -84,7 +84,7 @@ final class TravelNetworkTests: XCTestCase {
             segments.append(seg(x, 0, x + 99.9, 0))
         }
         let expectation = XCTestExpectation(description: "repair returns")
-        DispatchQueue.global().async {
+        DispatchQueue.global().async { [segments] in
             _ = AisleNetwork.repair(segments: segments, autoBridgeUpTo: 25 * 12)
             expectation.fulfill()
         }

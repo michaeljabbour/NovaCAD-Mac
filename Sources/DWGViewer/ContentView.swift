@@ -1193,7 +1193,7 @@ struct ContentView: View {
                         aiSession: session.aiAssistant,
                         regen: regen,
                         visibility: visibility,
-                        selectionProvider: { [weak session] in session?.selection ?? [] },
+                        selectionProvider: { [weak session = session] in session?.selection ?? [] },
                         onApplyEdits: applyAIProposedEdits,
                         onApplyGeometry: applyAIProposedGeometry,
                         onClose: { showAIAssistant = false },

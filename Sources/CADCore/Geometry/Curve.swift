@@ -425,7 +425,7 @@ private let gl5Weights: [Double] = [
     0.4786286704993665, 0.2369268850561891
 ]
 
-public extension Curve2 {
+extension Curve2 {
 
     // MARK: paramDomain
 

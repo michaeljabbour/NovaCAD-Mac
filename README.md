@@ -98,9 +98,14 @@ fewer DWG versions and is less faithful than the ODA converter.
 ## Install as a Mac app
 
 ```sh
-./Scripts/build_app.sh              # builds a release .app and installs to /Applications
+./Scripts/build_app.sh              # tests, builds, and installs to /Applications
 ./Scripts/build_pkg.sh              # builds NovaCAD-<version>.pkg for sharing
 ```
+
+`swift build` and `swift run` alone do not install a Finder application.
+The install script registers NovaCAD for `.dwg` and `.dxf` files, so you can
+right-click a drawing and choose **Open With → NovaCAD** immediately. DWG
+still requires the separate [converter setup](#dwg-files); DXF opens directly.
 
 Prebuilt installers are attached to
 [Releases](https://github.com/ryandirezze/NovaCAD-Mac/releases/latest). The
