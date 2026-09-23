@@ -73,20 +73,9 @@ struct DWGViewerApp: App {
     var body: some Scene {
         WindowGroup("NovaCAD") {
             DocumentTabsView()
-                // Without an explicit minimum, `WindowGroup` can open (and
-                // be resized) narrower than the toolbar/ribbon's natural
-                // content width, silently clipping trailing buttons off the
-                // right edge — reported by a user as "not all menu bar
-                // content displays... forcing me to resize the window."
-                // 1150 comfortably fits the toolbar's ~20 leading buttons +
-                // the ribbon's 6 groups at default sizing; `toolbar`/
-                // `RibbonView` are ALSO wrapped in a horizontal `ScrollView`
-                // each (see ContentView.swift/RibbonView.swift) as a second,
-                // independent guarantee — so even content that somehow still
-                // exceeds this minimum (a future addition, an unusually
-                // small external display) stays reachable by scrolling
-                // rather than silently clipped, satisfying "regardless of
-                // window size" for real rather than just raising the floor.
+                // Keep the layers, canvas, and native quick-access controls
+                // usable together. Ribbon groups compact as width decreases
+                // and can scroll horizontally if additional tools overflow.
                 .frame(minWidth: 1150, minHeight: 700)
         }
         .windowStyle(.hiddenTitleBar)

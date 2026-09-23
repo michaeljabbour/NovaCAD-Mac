@@ -22,7 +22,7 @@ struct RibbonView<Extras: View>: View {
             HStack(spacing: 2) {
                 ForEach(RibbonTab.allCases) { item in
                     Button {
-                        if selectedTab == item.rawValue && collapsed { collapsed = false }
+                        collapsed = false
                         selectedTab = item.rawValue
                     } label: {
                         Text(item.rawValue).font(.system(size: 13, weight: tab == item ? .semibold : .regular))

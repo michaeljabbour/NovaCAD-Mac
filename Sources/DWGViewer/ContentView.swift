@@ -489,7 +489,6 @@ struct ContentView: View {
                 if document != nil { commandBar }
             }
         }
-        .toolbar(removing: .sidebarToggle)
         }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) { quickAccessControls }
@@ -760,10 +759,6 @@ struct ContentView: View {
 
     private var quickAccessControls: some View {
         HStack(spacing: 10) {
-            Button {
-                sidebarVisibility = sidebarVisibility == .detailOnly ? .all : .detailOnly
-            } label: { Image(systemName: "sidebar.left") }
-                .help("Show or hide layers").accessibilityLabel("Toggle layers sidebar")
             Menu("File") { FileMenuItems(dispatch: fileDispatch) }
                 .fixedSize().fontWeight(.semibold)
             Button(action: saveDrawing) { Image(systemName: "square.and.arrow.down") }
