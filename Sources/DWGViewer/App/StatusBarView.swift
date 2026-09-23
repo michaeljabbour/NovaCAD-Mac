@@ -102,7 +102,10 @@ struct WorkspaceAnchorPreference: PreferenceKey {
 
 extension View {
     func workspaceAnchor(_ anchor: WorkspaceAnchor) -> some View {
-        anchorPreference(key: WorkspaceAnchorPreference.self, value: .bounds) { [anchor: $0] }
+        // A parent anchor (the status bar) must preserve its child buttons.
+        transformAnchorPreference(key: WorkspaceAnchorPreference.self, value: .bounds) { anchors, bounds in
+            anchors[anchor] = bounds
+        }
     }
 }
 
