@@ -926,6 +926,8 @@ enum Regenerator {
         let t0 = Date()
         let store = parsed.store
 
+        let paperLayout = parsed.paperLayouts.first { $0.id == parsed.activePaperLayoutID }
+
         // ---- Identify xrefs and route modern model/paper-space blocks ----
         // (Same rules as GeometryBuilder: *MODEL_SPACE/*PAPER_SPACE block
         // content is treated as if it were emitted directly to model/paper
@@ -1155,7 +1157,8 @@ enum Regenerator {
                     let matches: Bool
                     switch space {
                     case .model: matches = h.owner.isModel
-                    case .paper: matches = h.owner.isPaper
+                    case .paper:
+                        matches = h.owner.isPaper && (paperLayout?.contains(EntityID(raw: Int32(i)), in: store) ?? true)
                     }
                     guard matches else { continue }
                     body(EntityID(raw: Int32(i)))
@@ -1166,6 +1169,7 @@ enum Regenerator {
                 // just walk their ranges in the same pass instead).
                 let names = space == .model ? modelSpaceBlockNames : paperSpaceBlockNames
                 for name in names.sorted() {
+                    if space == .paper, let paperLayout, !paperLayout.blockNames.contains(name) { continue }
                     guard let b = parsed.blocks[name] else { continue }
                     for i in Int(b.entityStart)..<Int(b.entityStart + b.entityCount) {
                         body(EntityID(raw: Int32(i)))

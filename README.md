@@ -148,7 +148,13 @@ which requires a paid Developer ID.
 ### Layers, xrefs & properties
 
 - **Layers panel** — show/hide (freeze/thaw), lock/unlock, color swatches,
-  entity counts, search, isolate on double-click.
+  entity counts, and search in original names or local English aliases for
+  common Russian CAD terms. Select multiple rows to show, hide, or isolate
+  them together; Restore returns to the visibility state before isolation.
+  Original layer names remain unchanged in the drawing.
+- **Paper sheets** — choose one named layout from the Sheet menu beside
+  Model/Paper; other sheets stay separate and are retained when saving.
+  The empty External References panel no longer takes space from the layers.
 - **External References pane** — show/hide each xref, flag unresolved ones,
   attach new xrefs, re-point missing xref paths, and open an xref in a new
   tab (auto-reloads when saved).
@@ -233,6 +239,9 @@ point and renders it highlighted; `--debug-bounds` prints culling statistics.
 PNG output is rendered at 2× the requested `--size` for crisp README/social
 images. Additional flags (`--exec`, `--compare`, `--roundtrip`, …) exist for
 automation and the project's own verification harnesses.
+
+Use `--layout "A-104. Furniture Arrangement"` to render a specific named
+paper sheet. This selects paper space and the editable renderer automatically.
 
 ## Xrefs & eTransmit
 

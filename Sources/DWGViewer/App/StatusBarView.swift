@@ -34,6 +34,9 @@ struct StatusBarView: View {
     let isLoading: Bool
     @Binding var space: SpaceSelection
     let onSpaceChanged: () -> Void
+    var paperLayouts: [PaperLayout] = []
+    var activePaperLayoutID: UInt64?
+    var onSelectPaperLayout: (UInt64) -> Void = { _ in }
 
     @State private var showQualityPopover = false
 
@@ -46,6 +49,20 @@ struct StatusBarView: View {
             .frame(width: 140)
             .disabled(isLoading || document == nil)
             .onChange(of: space) { _, _ in onSpaceChanged() }
+
+            if space == .paper, !paperLayouts.isEmpty {
+                Picker("Sheet", selection: Binding(
+                    get: { activePaperLayoutID ?? paperLayouts[0].id },
+                    set: onSelectPaperLayout
+                )) {
+                    ForEach(paperLayouts) { sheet in
+                        Text(sheet.name).tag(sheet.id)
+                    }
+                }
+                .frame(maxWidth: 400)
+                .disabled(isLoading)
+                .help("Show one paper layout at a time")
+            }
 
             Spacer()
 

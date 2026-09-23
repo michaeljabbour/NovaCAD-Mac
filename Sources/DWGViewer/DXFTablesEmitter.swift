@@ -291,7 +291,10 @@ extension DXFStructuralWriter {
             }
             out.pair(2, name)
             if version.hasHandles {
-                out.pair(340, 0)   // layout handle — no distinct LAYOUT object authored for named blocks by this codebase yet (see OBJECTS emitter's model/paper-space LAYOUT handling for the two spaces themselves)
+                let layoutHandle = parsed.objects.layouts.values.first {
+                    $0.blockRecordHandle == graph.blockRecordHandles[name]
+                }?.handle ?? 0
+                out.handlePair(340, layoutHandle)
                 out.pair(70, 0); out.pair(280, 1); out.pair(281, 0)
             }
         }
@@ -308,7 +311,7 @@ extension DXFStructuralWriter {
         var names = ["*Model_Space", "*Paper_Space"]
         for (name, _) in parsed.blocks.sorted(by: { $0.key < $1.key }) {
             let upper = name.uppercased()
-            guard !upper.hasPrefix("*MODEL_SPACE"), upper != "$MODEL_SPACE", !upper.hasPrefix("*PAPER_SPACE") else { continue }
+            guard upper != "*MODEL_SPACE", upper != "$MODEL_SPACE", upper != "*PAPER_SPACE" else { continue }
             names.append(name)
         }
         return names

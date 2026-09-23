@@ -169,7 +169,10 @@ enum SnapshotMode {
                 exit(2)
             }
         }
-        let usePaper = args.contains("--space") &&
+        let requestedLayout = args.firstIndex(of: "--layout").flatMap { i in
+            args.count > i + 1 ? args[i + 1] : nil
+        }
+        let usePaper = requestedLayout != nil || args.contains("--space") &&
             (args.firstIndex(of: "--space").map { args.count > $0 + 1 && args[$0 + 1] == "paper" } ?? false)
         let dark = !args.contains("--light")
 
@@ -230,7 +233,7 @@ enum SnapshotMode {
         // path (plain .dxf/.dwg, folder, eTransmit .zip) — xref/DWG/ZIP
         // resolution routes through `PackageLoader.loadIntoStore`, the
         // EntityStore-level equivalent of `PackageLoader.load`.
-        let useNewPath = args.contains("--new-path")
+        let useNewPath = args.contains("--new-path") || requestedLayout != nil
 
         do {
             let t0 = Date()
@@ -242,6 +245,16 @@ enum SnapshotMode {
                     if pct / 10 != lastPct / 10 { lastPct = pct; print("progress: \(pct)%") }
                 })
                 let parseSeconds = Date().timeIntervalSince(t0)
+                if let requestedLayout {
+                    guard let sheet = parsed.paperLayouts.first(where: {
+                        $0.name.caseInsensitiveCompare(requestedLayout) == .orderedSame
+                    }) else {
+                        FileHandle.standardError.write(Data("snapshot: unknown sheet '\(requestedLayout)'; available: \(parsed.paperLayouts.map(\.name).joined(separator: ", "))\n".utf8))
+                        exit(2)
+                    }
+                    parsed.activePaperLayoutID = sheet.id
+                    print("sheet: \(sheet.name)")
+                }
                 doc = Regenerator.build(from: parsed, parseSeconds: parseSeconds) { p in
                     let pct = 70 + Int(p * 30)
                     if pct / 10 != lastPct / 10 { lastPct = pct; print("progress: \(pct)%") }

@@ -52,6 +52,9 @@ No known regressions or broken features found.
 [X] **Explode on stamp** — symbol explodes to markup lines (not INSERT references)
 
 ## Layer Management
+[X] **English layer display names** — local aliases for common Russian architectural layer terms, searchable in either language without changing source names
+[X] **Bulk visibility and reversible isolation** — Show/Hide/Isolate for selected layers or search results; Restore preserves the previous hidden-layer set
+[X] **Named paper-sheet selection** — render one layout at a time; preserve all layout blocks and paper ownership when saving
 [X] **Layer panel** — show/hide (freeze/thaw) any layer, color swatches, entity counts, search filter
 [X] **Lock/unlock layers** — locked layers stay visible but can't be selected or snapped
 [X] **Bulk controls** — All On / All Off buttons

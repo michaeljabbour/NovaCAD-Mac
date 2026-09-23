@@ -42,15 +42,9 @@ final class EditableBlockDef {
     /// block definition). 0 if absent (R12 sources). Purely additive — a
     /// new `var` on a class with no custom init to update.
     var handle: UInt64 = 0
-    /// Phase 3 groundwork: this block's corresponding BLOCK_RECORD table
-    /// entry's handle, when resolvable by name match against
-    /// `EditableParsedDocument.symbolTables["BLOCK_RECORD"]` after a full
-    /// parse (BLOCK_RECORD entries are parsed from TABLES, which in a
-    /// well-formed DXF comes BEFORE BLOCKS, so this can't be filled in
-    /// during the BLOCK record's own parse — left for a later phase/the
-    /// writer to cross-reference by name if needed; not populated by this
-    /// parser today). Documented here so the field's absence is a known,
-    /// deliberate gap rather than an oversight.
+    /// Owning BLOCK_RECORD handle, read from group 330 and reconciled with
+    /// the symbol table by name after parsing. Used to associate paper-space
+    /// blocks with their named layouts and preserve that link when saving.
     var blockRecordHandle: UInt64? = nil
 }
 
@@ -98,6 +92,10 @@ final class EditableParsedDocument {
     /// re-emit one TABLE block at a time in the original per-table order.
     var symbolTables: [String: [SymbolRecord]] = [:]
     var objects = ObjectsModel()
+    /// View state only; nil retains legacy combined rendering for callers
+    /// that have no sheet selection. All sheets remain in the editable store.
+    var activePaperLayoutID: UInt64?
+    var paperLayouts: [PaperLayout] { PaperLayout.sheets(in: self) }
 
     var store: EntityStore { document.store }
 }
@@ -260,7 +258,7 @@ enum EntityStoreParser {
         // binary-chunk XDATA retention yet) so they're deliberately left off
         // this list; if a future phase reads them via `p.str` they'll need
         // adding here too, same as this bug's fix for 5/1000/1001/1005.
-        case 1, 2, 3, 6, 7, 8, 9, 5, 330, 340, 360, 390, 1000, 1001, 1005: return true
+        case 1, 2, 3, 6, 7, 8, 9, 5, 102, 330, 340, 360, 390, 410, 1000, 1001, 1005: return true
         default: return false
         }
     }
@@ -403,6 +401,7 @@ enum EntityStoreParser {
             var lineweight: Int16 = -1
             var mirrorOCS = false
             var handle: UInt64 = 0
+            var layoutOwnerHandle: UInt64?
         }
         struct PendingPolyline {
             var flags = 0
@@ -516,6 +515,7 @@ enum EntityStoreParser {
             var currentXDataAppId: String? = nil
             var currentXDataPairs: [(code: Int16, value: XDataValue)] = []
             var residual: [(code: Int16, value: String)] = []
+            var controlDepth = 0
 
             func flushXData() {
                 guard let appId = currentXDataAppId else { return }
@@ -526,6 +526,13 @@ enum EntityStoreParser {
 
             for p in pairs {
                 switch p.code {
+                case 102:
+                    if p.str?.hasPrefix("{") == true { controlDepth += 1 }
+                    else if p.str == "}" { controlDepth = max(0, controlDepth - 1) }
+                case 330:
+                    if controlDepth == 0, e.layoutOwnerHandle == nil, let value = p.str {
+                        e.layoutOwnerHandle = UInt64(value, radix: 16)
+                    }
                 case 8:   e.layerId = internLayer(p.str ?? "0")
                 case 62:  e.aci = Int16(clamping: safeInt(p.num))
                 case 420: e.trueColor = UInt32(truncatingIfNeeded: safeInt(p.num)) & 0x00FF_FFFF
@@ -574,6 +581,10 @@ enum EntityStoreParser {
         @discardableResult
         func emit(_ proto: EntityPrototype, common: PendingHeaderCommon,
                  xdata: [XDataBlob], residual: [(code: Int16, value: String)]) -> EntityID {
+            var residual = residual
+            if proto.owner.isPaper, let owner = common.layoutOwnerHandle {
+                residual.append((330, String(owner, radix: 16, uppercase: true)))
+            }
             let id = store.append(proto)
             if common.handle != 0 {
                 store.setHeader(id) { $0.handle = common.handle }
@@ -928,6 +939,7 @@ enum EntityStoreParser {
                     case 1: b.xrefPath = p.str ?? ""
                     case 3: if b.name.isEmpty { b.name = p.str ?? "" }
                     case 5: if let s = p.str, let v = UInt64(s, radix: 16) { b.handle = v }
+                    case 330: if let s = p.str, let v = UInt64(s, radix: 16) { b.blockRecordHandle = v }
                     default: break
                     }
                 }

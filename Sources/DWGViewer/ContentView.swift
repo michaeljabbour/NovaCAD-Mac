@@ -413,7 +413,7 @@ struct ContentView: View {
                 liveLayerIds: regen?.layerIdsWithLiveEntities(),
                 onDeleteLayer: deleteLayer
             )
-                .navigationSplitViewColumnWidth(min: 240, ideal: 290, max: 420)
+                .navigationSplitViewColumnWidth(min: 300, ideal: 370, max: 560)
         } detail: {
             VStack(spacing: 0) {
                 toolbar
@@ -469,7 +469,14 @@ struct ContentView: View {
                 }
                 StatusBarView(settings: settings, document: document, isLoading: isLoading,
                               space: Binding(get: { space }, set: { space = $0 }),
-                              onSpaceChanged: handleSpaceChanged)
+                              onSpaceChanged: handleSpaceChanged,
+                              paperLayouts: regen?.parsed.paperLayouts ?? [],
+                              activePaperLayoutID: regen?.parsed.activePaperLayoutID,
+                              onSelectPaperLayout: { id in
+                                  regen?.selectPaperLayout(id)
+                                  session.objectWillChange.send()
+                                  handleSpaceChanged()
+                              })
                 if document != nil { commandBar }
             }
         }

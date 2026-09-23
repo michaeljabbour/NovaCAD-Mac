@@ -134,6 +134,7 @@ struct WelcomeView: View {
 /// changelog; older entries should be trimmed as they stop being "new."
 enum WhatsNew {
     static let recentHighlights: [String] = [
+        "View one drawing sheet at a time, read common Russian layer names in English, and show, hide, or isolate multiple layers with a single click.",
         "You can now choose NovaCAD in Finder's Open With menu for DWG and DXF drawings immediately after installation.",
         "You're now notified after opening a drawing if any external references couldn't be found or if the drawing was too large to fully resolve them all.",
         "Select a line or polyline to set its thickness right in the Properties pane — and it now actually draws thicker on screen.",
@@ -143,7 +144,6 @@ enum WhatsNew {
         "Select an object on the drawing and say \"measure from this\" — the AI Assistant can now see what you have selected.",
         "The AI Assistant can draw each travel path on the drawing so you can check the route it measured and adjust it yourself.",
         "The AI Assistant now shows whether it's working or stalled, and a new reset button restarts it WITHOUT clearing your conversation.",
-        "The AI Assistant is now a movable, resizable floating window — drag it anywhere over the drawing, or dock it back to the side.",
         "Shaded aisles, dock aprons, and any filled/hatched area are now fully editable — drag a corner, or use Stretch to extend one.",
         "The AI Assistant is more reliable — it keeps your chosen model when you open Settings and now tells you clearly when the model or local opencode server can't be reached instead of going quiet.",
     ]

@@ -315,6 +315,7 @@ final class RegenCoordinator {
                                                     xrefProgress: xrefProgress,
                                                     progress: { p in progress?(p * 0.85) })
         MarkupStore.ensureMarkupLayer(in: parsed)
+        parsed.activePaperLayoutID = parsed.paperLayouts.first?.id
         let doc = Regenerator.build(from: parsed, parseSeconds: 0) { p in progress?(0.85 + p * 0.15) }
         return RegenCoordinator(parsed: parsed, document: doc)
     }
@@ -374,6 +375,24 @@ final class RegenCoordinator {
     func apply(_ ops: [Transaction.Op]) -> RegenDelta {
         revision += 1
         guard !ops.isEmpty else { return RegenDelta(revision: revision) }
+
+        if let sheet = parsed.activePaperLayoutID {
+            // New paper-space geometry belongs to the current sheet. Keep
+            // this metadata with the entity so undo/copy/checkpoints retain it.
+            for op in ops {
+                guard case .add(let id) = op, parsed.store.header(id)?.owner.isPaper == true else { continue }
+                var blob = parsed.store.residualPairs[id.raw] ?? RawPairBlob(pairs: [])
+                if !blob.pairs.contains(where: { $0.code == 330 || $0.code == 410 }) {
+                    blob.pairs.append((330, String(sheet, radix: 16, uppercase: true)))
+                    parsed.store.residualPairs[id.raw] = blob
+                    parsed.store.setHeader(id) { $0.flags.insert(.hasResidual) }
+                }
+            }
+            // Incremental patches predate individual sheets. Rebuild through
+            // the sheet-aware root walk rather than emitting hidden sheets.
+            fullRebuild()
+            return RegenDelta(fullRebuild: true, revision: revision)
+        }
 
         // `document.layers` is an IMMUTABLE `let` array on `DXFDocument` —
         // there is no way to append a single new entry to it short of
@@ -1163,6 +1182,14 @@ final class RegenCoordinator {
 
     // MARK: - Compaction
 
+    /// Switch the displayed sheet without removing any stored geometry.
+    func selectPaperLayout(_ id: UInt64) {
+        guard parsed.activePaperLayoutID != id, parsed.paperLayouts.contains(where: { $0.id == id }) else { return }
+        parsed.activePaperLayoutID = id
+        revision += 1
+        fullRebuild()
+    }
+
     /// Throws away all delta/tombstone bookkeeping and does a full
     /// `Regenerator.build` rebuild, then swaps it in. Selection is untouched
     /// by this call (it lives in `Set<EntityID>` on the caller's side, per
@@ -1183,6 +1210,7 @@ final class RegenCoordinator {
     /// from one yet outside of tests written that way.
     func fullRebuild() {
         let newDoc = Regenerator.build(from: parsed, parseSeconds: document.stats.parseSeconds) { _ in }
+        newDoc.sourceDXFURL = document.sourceDXFURL
         document = newDoc
         entityLocator.removeAll()
         groupReverseIndex.removeAll()   // old groups' indices/contents no longer exist
