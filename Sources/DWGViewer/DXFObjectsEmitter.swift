@@ -47,7 +47,7 @@ extension DXFStructuralWriter {
 
         for layout in objects.layouts.values { writeLayout(layout, out: out) }
         for group in objects.groups.values { writeGroup(group, out: out) }
-        for imageDef in objects.imageDefs.values { writeImageDef(imageDef, out: out) }
+        for imageDef in objects.imageDefs.values { writeImageDef(imageDef, directories: parsed.resourceDirectories, out: out) }
         for raw in objects.rawObjects.values { writeRawObject(raw, out: out) }
 
         out.pair(0, "ENDSEC")
@@ -68,9 +68,22 @@ extension DXFStructuralWriter {
         for p in g.rawPairs { out.pair(Int(p.code), p.value) }
     }
 
-    private static func writeImageDef(_ i: ImageDefObject, out: DXFOutputStream) {
+    private static func writeImageDef(_ i: ImageDefObject, directories: [URL], out: DXFOutputStream) {
         out.pair(0, "IMAGEDEF")
-        for p in i.rawPairs { out.pair(Int(p.code), p.value) }
+        // Absolute resolved paths keep Save As/recovery usable after moving
+        // the DXF to a different folder. Missing resources retain their path.
+        let path = SheetRenderSupport.resourceURL(i.fileName, directories: directories)?.path ?? i.fileName
+        if i.rawPairs.isEmpty {
+            out.handlePair(5, i.handle); out.handlePair(330, i.ownerHandle)
+            out.pair(100, "AcDbRasterImageDef"); out.pair(90, 0)
+            out.pair(1, path)
+            out.pair(10, i.imageSizePx?.w ?? 1); out.pair(20, i.imageSizePx?.h ?? 1)
+            out.pair(11, 1.0); out.pair(21, 1.0); out.pair(280, 1); out.pair(281, 0)
+        } else {
+            for p in i.rawPairs {
+                if p.code == 1 { out.pair(1, path) } else { out.pair(Int(p.code), p.value) }
+            }
+        }
     }
 
     private static func writeRawObject(_ r: RawObject, out: DXFOutputStream) {

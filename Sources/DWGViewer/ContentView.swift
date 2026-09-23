@@ -29,6 +29,11 @@ struct ContentView: View {
     /// the real implementation; the default is only for previews/tests.
     var onOpenInNewTab: (URL) -> Void = { _ in }
 
+    var onNewTab: () -> Void = {}
+    var onCloseTab: () -> Void = {}
+    var onRecover: () -> Void = {}
+    @State private var showingPDFExport = false
+
     @State private var darkBackground = true
 
     @State private var isImporterPresented = false
@@ -411,7 +416,8 @@ struct ContentView: View {
                 onOpenXref: openXrefInNewTab,
                 onDetachXref: beginXrefDetach,
                 liveLayerIds: regen?.layerIdsWithLiveEntities(),
-                onDeleteLayer: deleteLayer
+                onDeleteLayer: deleteLayer,
+                onZoomToLayer: zoomToLayer, sheetUsage: session.currentLayerUsage
             )
                 .navigationSplitViewColumnWidth(min: 300, ideal: 370, max: 560)
         } detail: {
@@ -476,7 +482,9 @@ struct ContentView: View {
                                   regen?.selectPaperLayout(id)
                                   session.objectWillChange.send()
                                   handleSpaceChanged()
-                              })
+                                  session.persistWorkspace()
+                              }, recoveryStatus: session.workspaceError ?? session.recoveryStatus,
+                              onLocateImages: locateImagesFolder)
                 if document != nil { commandBar }
             }
         }
@@ -606,6 +614,8 @@ struct ContentView: View {
             openFile(url: url)
         }
         .onDisappear {
+            session.persistWorkspace()
+            session.checkpointRecovery()
             pgpWatcher?.cancel()
             pgpWatcher = nil
         }
@@ -620,6 +630,14 @@ struct ContentView: View {
         // every body evaluation so the disabled-state flags always reflect
         // this tab's CURRENT document/loading/selection/undo state.
         .focusedSceneValue(\.novaCADCommandDispatch, commandDispatch)
+        .focusedSceneValue(\.novaCADFileDispatch, fileDispatch)
+        .sheet(isPresented: $showingPDFExport) {
+            if let regen { PDFExportView(parsed: regen.parsed, visibility: visibility, currentSpace: space,
+                                          sourceName: currentSourceURL?.deletingPathExtension().lastPathComponent ?? "Drawing") }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { _ in
+            session.persistWorkspace(); session.checkpointRecovery()
+        }
     }
 
     /// The single `CommandDispatch` value shared by BOTH `.focusedSceneValue`
@@ -639,6 +657,57 @@ struct ContentView: View {
             canPaste: { PasteboardSnapshot.read(from: .general) != nil },
             pasteAtOriginalCoordinates: { pasteAtOriginalCoordinates() }
         )
+    }
+
+    private var fileDispatch: FileDispatch {
+        FileDispatch(ready: document != nil && !isLoading,
+            open: { isImporterPresented = true }, openURL: { onOpenInNewTab($0) },
+            newTab: onNewTab, close: { session.persistWorkspace(); session.checkpointRecovery(); onCloseTab() },
+            save: saveDrawing, saveAs: saveDrawingAs,
+            reload: {
+                if session.hasUnsavedChanges {
+                    let alert = NSAlert()
+                    alert.messageText = "Reload from disk?"
+                    alert.informativeText = "Your current edits will be kept in a recovery copy, available from File → Recover Unsaved Drawings."
+                    alert.addButton(withTitle: "Reload"); alert.addButton(withTitle: "Cancel")
+                    guard alert.runModal() == .alertFirstButtonReturn else { return }
+                    session.checkpointRecovery()
+                }
+                reloadDocument()
+            }, exportPDF: { showingPDFExport = true }, exportMarkup: saveMarkupAsDXF, recover: onRecover)
+    }
+
+    private func locateImagesFolder() {
+        guard let regen else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true; panel.canChooseFiles = false
+        panel.title = "Locate Drawing Images"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        regen.parsed.resourceDirectories.insert(url, at: 0)
+        regen.fullRebuild(); session.objectWillChange.send()
+        session.persistWorkspace()
+    }
+
+    private func zoomToLayer(_ id: Int) {
+        guard document != nil, let target = session.currentLayerUsage[id]?.bounds,
+              !target.isNull else { return }
+        visibility.hiddenLayerIds.remove(id)
+        fit(to: target.insetBy(dx: -max(target.width * 0.04, 0.01), dy: -max(target.height * 0.04, 0.01)))
+    }
+
+    private func saveViewPreset() {
+        let alert = NSAlert()
+        alert.messageText = "Save View Preset"
+        alert.informativeText = "Remember this sheet, zoom, and layer visibility."
+        let input = NSTextField(string: "")
+        input.placeholderString = "Furniture review"
+        input.frame = NSRect(x: 0, y: 0, width: 300, height: 24)
+        alert.accessoryView = input
+        alert.addButton(withTitle: "Save"); alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = input
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let name = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !name.isEmpty { session.savePreset(name: name) }
     }
 
     private func commitPendingText() {
@@ -664,7 +733,8 @@ struct ContentView: View {
     /// space, or vice versa) — unchanged behavior, just relocated to a named
     /// function so it can be passed as a closure across the view boundary.
     private func handleSpaceChanged() {
-        selection = []; moveState = MoveState(); cancelModify(); cancelTrimExtend(); cancelFilletChamfer(); cancelOffset(); fitToView()
+        selection = []; moveState = MoveState(); cancelModify(); cancelTrimExtend(); cancelFilletChamfer(); cancelOffset();
+        fitToView()
     }
 
     private var toolbar: some View {
@@ -676,20 +746,33 @@ struct ContentView: View {
             // full "regardless of window size" fix this is one half of.
             ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 12) {
+            Menu("File") { FileMenuItems(dispatch: fileDispatch) }
+                .fixedSize()
+            Menu("Views") {
+                Button("Save View Preset…", action: saveViewPreset)
+                ForEach(session.presets) { preset in
+                    Button(preset.name) { handleSpaceChanged(); _ = session.restoreWorkspace(preset.workspace) }
+                }
+                if !session.presets.isEmpty {
+                    Menu("Delete Preset") {
+                        ForEach(session.presets) { preset in
+                            Button(preset.name) { session.deletePreset(preset.id) }
+                        }
+                    }
+                }
+            }.disabled(document == nil || isLoading)
             Button("Open File…") { isImporterPresented = true }
                 .disabled(isLoading)
 
             Button {
                 saveDrawing()
             } label: { Image(systemName: "square.and.arrow.down") }
-                .keyboardShortcut("s", modifiers: .command)
                 .help("Save (⌘S) — writes every edit (moves, blocks, arrays, new entities, etc.) back to the DXF file")
                 .disabled(document == nil || isLoading)
 
             Button {
                 saveDrawingAs()
             } label: { Image(systemName: "square.and.arrow.down.on.square") }
-                .keyboardShortcut("s", modifiers: [.command, .shift])
                 .help("Save As… (⇧⌘S)")
                 .disabled(document == nil || isLoading)
 
@@ -1216,7 +1299,8 @@ struct ContentView: View {
             .onChange(of: proxy.size) { _, newSize in
                 let hadSize = viewSize.width > 1
                 viewSize = newSize
-                if !hadSize { fitToView() }
+                if let saved = session.pendingWorkspace { _ = session.restoreWorkspace(saved) }
+                else if !hadSize { fitToView() }
             }
         }
     }
@@ -2158,12 +2242,15 @@ struct ContentView: View {
         // into a `.dwg`-named path would silently corrupt it from any other
         // tool's point of view — falls through to Save As instead, which
         // prompts for a real `.dxf` destination.
+        if session.recoveredDocument { saveDrawingAs(); return }
         guard let url = doc.sourceDXFURL
             ?? (currentSourceURL?.pathExtension.lowercased() == "dxf" ? currentSourceURL : nil)
         else { saveDrawingAs(); return }
         do {
-            let warnings = try DXFStructuralWriter.write(regen.parsed, to: url)
+            let warnings = try DrawingFileWriter.write(regen.parsed, to: url)
             doc.sourceDXFURL = url
+            session.markSaved(to: url)
+            NSDocumentController.shared.noteNewRecentDocumentURL(url)
             commandMessage = warnings.isEmpty
                 ? "Saved \(url.lastPathComponent)"
                 : "Saved \(url.lastPathComponent) (\(warnings.count) warning(s) — see Console)"
@@ -2184,12 +2271,14 @@ struct ContentView: View {
         guard let regen = session.regen, let doc = document else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [UTType(filenameExtension: "dxf") ?? .data]
-        panel.nameFieldStringValue = doc.sourceDXFURL?.lastPathComponent ?? "drawing.dxf"
+        panel.nameFieldStringValue = doc.sourceDXFURL?.lastPathComponent ?? ((currentSourceURL?.deletingPathExtension().lastPathComponent ?? "drawing") + ".dxf")
         panel.title = "Save Drawing As"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            let warnings = try DXFStructuralWriter.write(regen.parsed, to: url)
+            let warnings = try DrawingFileWriter.write(regen.parsed, to: url)
             doc.sourceDXFURL = url
+            session.markSaved(to: url)
+            NSDocumentController.shared.noteNewRecentDocumentURL(url)
             commandMessage = warnings.isEmpty
                 ? "Saved \(url.lastPathComponent)"
                 : "Saved \(url.lastPathComponent) (\(warnings.count) warning(s) — see Console)"
@@ -6375,7 +6464,10 @@ struct ContentView: View {
         loadingXrefIndex = 0
         loadingXrefTotal = 0
         loadCancelRequested = false
+        session.persistWorkspace()
+        session.checkpointRecovery()
         currentSourceURL = url
+        let recovery = session.pendingRecovery
         let scoped = url.startAccessingSecurityScopedResource()
         Task.detached(priority: .userInitiated) {
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
@@ -6413,6 +6505,14 @@ struct ContentView: View {
                 ) { p in
                     Task { @MainActor in loadProgress = p }
                 }
+                if let directories = WorkspaceStore.load(url).resourceDirectories {
+                    coordinator.parsed.resourceDirectories = directories + coordinator.parsed.resourceDirectories
+                    coordinator.fullRebuild()
+                }
+                if let recovery {
+                    coordinator.parsed.resourceDirectories = recovery.resourceDirectories
+                    coordinator.fullRebuild()
+                }
                 await MainActor.run { applyDocument(coordinator) }
             } catch PackageLoadStoreError.cancelled {
                 // User-initiated abort via the loading overlay's Cancel
@@ -6439,6 +6539,20 @@ struct ContentView: View {
         let doc = coordinator.document
         isLoading = false
         session.regen = coordinator
+        session.savedRevision = coordinator.parsed.document.revision
+        session.lastRecoveryRevision = nil
+        session.recoveryID = UUID()
+        session.recoveryGeneration += 1
+        session.recoveryStatus = ""
+        let recovery = session.pendingRecovery
+        session.pendingRecovery = nil
+        session.recoveredDocument = recovery != nil
+        session.recoveredFromID = recovery?.id
+        if let recovery { currentSourceURL = recovery.sourceURL; session.recoveryStatus = "Recovered copy — use Save As" }
+        if let url = currentSourceURL {
+            session.presets = WorkspaceStore.load(url).presets
+            NSDocumentController.shared.noteNewRecentDocumentURL(url)
+        }
         session.markupLayerId = coordinator.parsed.layerIdByName[MarkupStore.layerName]
         selection = []
         propertiesMinimized = false
@@ -6520,7 +6634,7 @@ struct ContentView: View {
         //      count — the per-row orange flag already tells the user WHICH
         //      ones; this just makes sure at least one of them notices.
         let unresolvedCount = doc.xrefs.filter { !$0.isResolved }.count
-        if doc.modelGroups.isEmpty && doc.paperGroups.isEmpty {
+        if doc.modelGroups.isEmpty && doc.paperGroups.isEmpty && doc.modelImages.isEmpty && doc.paperImages.isEmpty && doc.paperViewports.isEmpty {
             alertMessage = "No supported entities found in the file."
         } else if doc.stats.truncated {
             alertMessage = "Drawing was very large; some entities were omitted for performance."
@@ -6563,6 +6677,9 @@ struct ContentView: View {
         } else {
             fitToView()
         }
+        let remembered = recovery?.workspace ?? currentSourceURL.flatMap { WorkspaceStore.load($0).lastView }
+        if let remembered { _ = session.restoreWorkspace(remembered) }
+        if recovery != nil { session.scheduleRecovery() }
     }
 
     // MARK: - View transforms

@@ -35,6 +35,10 @@ struct ResolvedPlotStyle {
 /// color/lineweight/cap/join overrides into the fill/stroke passes).
 enum CGRenderCore {
 
+    static func plotStrokeWidth(_ lineweight: Int16) -> CGFloat {
+        CGFloat(lineweight < 0 ? 25 : max(1, lineweight)) / 100 * 72 / 25.4
+    }
+
     static let darkBackgroundRGB: (CGFloat, CGFloat, CGFloat) = (0.13, 0.16, 0.19) // AutoCAD-ish
 
     /// Converts a layer's AutoCAD-style 0-100% transparency into the alpha
@@ -85,10 +89,10 @@ enum CGRenderCore {
     /// whatever was partially drawn (the context is left in an undefined state).
     @discardableResult
     static func draw(into ctx: CGContext, document: DXFDocument, params p: RenderParams,
-                     styleResolver: PlotStyleResolving? = nil,
+                     styleResolver: PlotStyleResolving? = nil, paintBackground: Bool = true,
                      isStale: () -> Bool = { false }) -> Bool {
-        let wPx = ctx.width
-        let hPx = ctx.height
+        let wPx = max(1, Int((p.viewSize.width * p.backingScale).rounded()))
+        let hPx = max(1, Int((p.viewSize.height * p.backingScale).rounded()))
 
         // Background
         if p.darkBackground {
@@ -97,7 +101,7 @@ enum CGRenderCore {
         } else {
             ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
         }
-        ctx.fill(CGRect(x: 0, y: 0, width: wPx, height: hPx))
+        if paintBackground { ctx.fill(CGRect(x: 0, y: 0, width: wPx, height: hPx)) }
 
         // world → bitmap pixels (bitmap is y-up bottom-left; view is y-down top-left)
         let toPixels = CGAffineTransform(scaleX: p.backingScale, y: p.backingScale)
@@ -113,6 +117,46 @@ enum CGRenderCore {
         let groups = p.usePaperSpace ? document.paperGroups : document.modelGroups
         let visible = groups.filter { g in
             p.visibility.isVisible(g) && g.bounds.intersects(worldRect)
+        }
+
+        // A paper viewport shows clipped model geometry, never another sheet.
+        if p.usePaperSpace {
+            for viewport in document.paperViewports where !p.visibility.hiddenLayerIds.contains(viewport.layerId) {
+                if isStale() { return false }
+                ctx.saveGState()
+                var clipTransform = worldToBitmap
+                if let clip = viewport.clip.copy(using: &clipTransform) { ctx.addPath(clip); ctx.clip() }
+                var nested = p
+                nested.usePaperSpace = false
+                nested.worldToView = viewport.modelToPaper.concatenating(p.worldToView)
+                nested.zoom = p.zoom * sqrt(abs(viewport.modelToPaper.a * viewport.modelToPaper.d - viewport.modelToPaper.b * viewport.modelToPaper.c))
+                nested.visibility.hiddenLayerIds.formUnion(viewport.frozenLayerIDs)
+                nested.selection = []
+                let complete = draw(into: ctx, document: document, params: nested,
+                                    styleResolver: styleResolver, paintBackground: false, isStale: isStale)
+                ctx.restoreGState()
+                if !complete { return false }
+            }
+        }
+        for raster in p.usePaperSpace ? document.paperImages : document.modelImages {
+            guard !p.visibility.hiddenLayerIds.contains(raster.layerId),
+                  !p.visibility.hiddenXrefIds.contains(raster.xrefId), raster.bounds.intersects(worldRect) else { continue }
+            if isStale() { return false }
+            ctx.saveGState()
+            ctx.concatenate(raster.transform.concatenating(worldToBitmap))
+            if let clip = raster.clip { ctx.addPath(clip); ctx.clip(using: .evenOdd) }
+            ctx.setAlpha(raster.opacity * fillAlpha(for: raster.layerId, in: document))
+            if let image = raster.image {
+                ctx.interpolationQuality = .high
+                ctx.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            } else {
+                ctx.setStrokeColor(CGColor(red: 0.85, green: 0.4, blue: 0.1, alpha: 1))
+                ctx.setLineWidth(0.003)
+                ctx.stroke(CGRect(x: 0, y: 0, width: 1, height: 1))
+                ctx.move(to: .zero); ctx.addLine(to: CGPoint(x: 1, y: 1))
+                ctx.move(to: CGPoint(x: 0, y: 1)); ctx.addLine(to: CGPoint(x: 1, y: 0)); ctx.strokePath()
+            }
+            ctx.restoreGState()
         }
 
         // Pass 1: fills (behind linework, like AutoCAD draw order for hatches).
@@ -201,9 +245,9 @@ enum CGRenderCore {
         ctx.setAllowsAntialiasing(quality.antialias)
         let bs = p.backingScale
         let zoomPx = p.zoom * bs                     // device px per drawing unit
-        let tol = quality.decimationTol * bs
+        let tol = p.vectorOutput ? 0 : quality.decimationTol * bs
         let tick = 1.0 * bs
-        let strokeWidth = 1.0 * bs                   // 1pt lines, like AutoCAD hairlines
+        let strokeWidth = (p.vectorOutput ? 0.25 * 72 / 25.4 : 1.0) * bs                   // 1pt lines, like AutoCAD hairlines
 
         // Occupancy grid for collapsed (sub-pixel) entities. Dense drawings have
         // millions of tiny entities that all land on the same few pixels — only
@@ -215,6 +259,7 @@ enum CGRenderCore {
         var occupied = [Bool](repeating: false, count: gridW * gridH)
 
         @inline(__always) func claimCell(_ sp: CGPoint) -> Bool {
+            if p.vectorOutput { return true }
             let gx = Int(sp.x / cell), gy = Int(sp.y / cell)
             guard gx >= 0, gy >= 0, gx < gridW, gy < gridH else { return false }
             let idx = gy * gridW + gx
@@ -230,6 +275,8 @@ enum CGRenderCore {
         for g in visible {
             guard !g.strokes.isEmpty else { continue }
             if isStale() { return false }
+            let layerWeight = document.layers.indices.contains(g.layerId) ? document.layers[g.layerId].lineweight : -3
+            let strokeWidth = p.vectorOutput ? Self.plotStrokeWidth(layerWeight) : strokeWidth
             var color = g.color.cgColor(darkBackground: p.darkBackground)
             // Layer transparency applies to linework the same as fills —
             // AutoCAD's Layer Properties Manager transparency affects the
@@ -241,7 +288,7 @@ enum CGRenderCore {
                 let d = document.linetypes[g.linetypeId].dashes
                 let patternLen = d.reduce(0, +)
                 // Draw solid when the pattern would collapse below ~4 screen points.
-                if !d.isEmpty && patternLen * p.zoom > 4 {
+                if !d.isEmpty && (p.vectorOutput || patternLen * p.zoom > 4) {
                     dashes = d.map { $0 * zoomPx }   // screen-space dash lengths
                 }
             }
@@ -291,7 +338,7 @@ enum CGRenderCore {
 
                 // Whole run smaller than ~a pixel: one deduplicated tick, filled
                 // (not stroked) — cheap and bounded by the occupancy grid.
-                if (run.bounds.width + run.bounds.height) * zoomPx < cell {
+                if !p.vectorOutput && (run.bounds.width + run.bounds.height) * zoomPx < cell {
                     let c = CGPoint(x: run.bounds.midX, y: run.bounds.midY)
                         .applying(worldToBitmap)
                     if claimCell(c) {
@@ -315,7 +362,7 @@ enum CGRenderCore {
                         wLast = sp
                     }
                     if run.closed { weighted.closeSubpath() }
-                    ctx.setLineWidth(Self.screenStrokeWidth(forLineweight: run.lineweight, defaultWidth: strokeWidth))
+                    ctx.setLineWidth((p.vectorOutput ? Self.plotStrokeWidth(run.lineweight < 0 ? layerWeight : run.lineweight) : Self.screenStrokeWidth(forLineweight: run.lineweight, defaultWidth: strokeWidth)))
                     if run.strokeAlpha < 1 { ctx.setStrokeColor(color.copy(alpha: run.strokeAlpha) ?? color) }
                     ctx.addPath(weighted)
                     ctx.strokePath()
@@ -352,7 +399,7 @@ enum CGRenderCore {
                              width: arc.radius * 2, height: arc.radius * 2)
                     .intersects(worldRect) else { continue }
                 let sc = c.applying(worldToBitmap)
-                if rPx < 1.4 {
+                if !p.vectorOutput && rPx < 1.4 {
                     if rPx >= 0.3, claimCell(sc) {
                         tickRects.append(CGRect(x: sc.x - tick / 2, y: sc.y - tick / 2,
                                                 width: tick, height: tick))
@@ -363,12 +410,12 @@ enum CGRenderCore {
                         weighted.addEllipse(in: CGRect(x: sc.x - rPx, y: sc.y - rPx,
                                                        width: rPx * 2, height: rPx * 2))
                     } else {
-                        let s = arc.startAngleDeg * .pi / 180
-                        let e = arc.endAngleDeg * .pi / 180
+                        let s = arc.startAngleDeg * .pi / 180 + atan2(worldToBitmap.b, worldToBitmap.a)
+                        let e = arc.endAngleDeg * .pi / 180 + atan2(worldToBitmap.b, worldToBitmap.a)
                         weighted.move(to: CGPoint(x: sc.x + rPx * cos(s), y: sc.y + rPx * sin(s)))
                         weighted.addArc(center: sc, radius: rPx, startAngle: s, endAngle: e, clockwise: false)
                     }
-                    ctx.setLineWidth(Self.screenStrokeWidth(forLineweight: arc.lineweight, defaultWidth: strokeWidth))
+                    ctx.setLineWidth((p.vectorOutput ? Self.plotStrokeWidth(arc.lineweight < 0 ? layerWeight : arc.lineweight) : Self.screenStrokeWidth(forLineweight: arc.lineweight, defaultWidth: strokeWidth)))
                     ctx.addPath(weighted)
                     ctx.strokePath()
                     ctx.setLineWidth(strokeWidth)
@@ -377,10 +424,9 @@ enum CGRenderCore {
                                                width: rPx * 2, height: rPx * 2))
                     pathVerts += 4
                 } else {
-                    // worldToBitmap is pan/zoom only (orientation preserved), so
-                    // world angles are valid in screen space.
-                    let s = arc.startAngleDeg * .pi / 180
-                    let e = arc.endAngleDeg * .pi / 180
+                    // Include sheet/view rotation when drawing analytic arcs.
+                    let s = arc.startAngleDeg * .pi / 180 + atan2(worldToBitmap.b, worldToBitmap.a)
+                    let e = arc.endAngleDeg * .pi / 180 + atan2(worldToBitmap.b, worldToBitmap.a)
                     path.move(to: CGPoint(x: sc.x + rPx * cos(s), y: sc.y + rPx * sin(s)))
                     path.addArc(center: sc, radius: rPx,
                                 startAngle: s, endAngle: e, clockwise: false)
@@ -488,8 +534,8 @@ enum CGRenderCore {
                 path.addEllipse(in: CGRect(x: sc.x - rPx, y: sc.y - rPx,
                                            width: rPx * 2, height: rPx * 2))
             } else {
-                let s = arc.startAngleDeg * .pi / 180
-                let e = arc.endAngleDeg * .pi / 180
+                let s = arc.startAngleDeg * .pi / 180 + atan2(worldToBitmap.b, worldToBitmap.a)
+                let e = arc.endAngleDeg * .pi / 180 + atan2(worldToBitmap.b, worldToBitmap.a)
                 path.move(to: CGPoint(x: sc.x + rPx * CoreGraphics.cos(s),
                                       y: sc.y + rPx * CoreGraphics.sin(s)))
                 path.addArc(center: sc, radius: rPx, startAngle: s, endAngle: e,
@@ -613,7 +659,7 @@ enum CGRenderCore {
                                   worldToBitmap: CGAffineTransform,
                                   wPx: Int, hPx: Int, isStale: () -> Bool) {
         let pxScale = p.zoom * p.backingScale   // pixels per drawing unit
-        let minCapPx = RenderQuality(level: p.quality).minTextPt * p.backingScale
+        let minCapPx = p.vectorOutput ? 0.01 : RenderQuality(level: p.quality).minTextPt * p.backingScale
         var fontCache: [Int: CTFont] = [:]
 
         for g in groups {
@@ -627,7 +673,7 @@ enum CGRenderCore {
             for (ti, item) in g.texts.enumerated() {
                 if let t = tombstones, t.isDead(.text, Int32(ti)) { continue }
                 let capPx = item.height * pxScale
-                guard capPx >= minCapPx, capPx <= 4000 else { continue }
+                guard capPx >= minCapPx, (p.vectorOutput || capPx <= 4000) else { continue }
                 let anchor = item.position.applying(worldToBitmap)
 
                 // Generous cull: assume ~0.8 * cap width per character.
@@ -648,9 +694,8 @@ enum CGRenderCore {
 
                 ctx.saveGState()
                 ctx.translateBy(x: anchor.x, y: anchor.y)
-                if item.rotationDegrees != 0 {
-                    ctx.rotate(by: item.rotationDegrees * .pi / 180)
-                }
+                let rotation = item.rotationDegrees * .pi / 180 + atan2(worldToBitmap.b, worldToBitmap.a)
+                if rotation != 0 { ctx.rotate(by: rotation) }
                 // MIRRTEXT=1 (Phase 4.2 MIRROR command): glyphs render
                 // backwards rather than being re-normalized to stay
                 // readable. Flipping the context's x-axis BEFORE hAlign's

@@ -38,17 +38,19 @@ struct StatusBarView: View {
     var activePaperLayoutID: UInt64?
     var onSelectPaperLayout: (UInt64) -> Void = { _ in }
 
+    var recoveryStatus = ""
+    var onLocateImages: () -> Void = {}
+    @State private var showIssues = false
     @State private var showQualityPopover = false
 
     var body: some View {
         HStack(spacing: 12) {
-            Picker("", selection: $space) {
+            Picker("", selection: Binding(get: { space }, set: { space = $0; onSpaceChanged() })) {
                 ForEach(SpaceSelection.allCases) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
             .frame(width: 140)
             .disabled(isLoading || document == nil)
-            .onChange(of: space) { _, _ in onSpaceChanged() }
 
             if space == .paper, !paperLayouts.isEmpty {
                 Picker("Sheet", selection: Binding(
@@ -65,6 +67,26 @@ struct StatusBarView: View {
             }
 
             Spacer()
+            if !recoveryStatus.isEmpty {
+                Text(recoveryStatus).font(.caption2).foregroundStyle(.secondary).lineLimit(1).help(recoveryStatus)
+            }
+            if let doc = document, !doc.renderingWarnings.isEmpty {
+                Button { showIssues.toggle() } label: {
+                    Label("\(doc.renderingWarnings.count) issues", systemImage: "exclamationmark.triangle")
+                }.foregroundStyle(.orange)
+                .popover(isPresented: $showIssues) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Drawing Content Issues").font(.headline)
+                        Text("Some content may be missing or displayed approximately.").font(.caption)
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 8) {
+                                ForEach(doc.renderingWarnings, id: \.self) { Text($0).font(.callout).textSelection(.enabled) }
+                            }
+                        }.frame(maxHeight: 300)
+                        Button("Locate Images Folder…", action: onLocateImages)
+                    }.padding(18).frame(width: 430)
+                }
+            }
 
             Button {
                 showQualityPopover.toggle()

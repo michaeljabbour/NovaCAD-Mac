@@ -130,6 +130,21 @@ which requires a paid Developer ID.
 
 ## Features
 
+### File menu, workspace, and recovery
+
+- **File** is available in the macOS menu bar and inside the window: New Tab,
+  Open/Open Recent, Save/Save As, Reload, PDF export, markup export, and recovery.
+- Drawings remember their last sheet, zoom, and layer visibility by original
+  layer name. **Views → Save View Preset** stores named views for that drawing.
+- **Only layers on this sheet/model** filters the sidebar to the current space.
+  Right-click a layer and choose **Zoom to Layer** to find its geometry.
+- Changed documents get a background recovery copy after three idle seconds,
+  with a 30-second fallback. Closing a tab or quitting also checkpoints edits.
+  **File → Recover Unsaved Drawings** opens a copy; the original is untouched.
+  Recovery copies persist until the recovered drawing is explicitly saved.
+- Save uses an atomic replacement after writing a complete DXF. DWG inputs
+  still require Save As to DXF. Recovery errors appear in the status bar.
+
 ### View & navigate
 
 - Renders LINE, CIRCLE, ARC, LWPOLYLINE (with bulges), POLYLINE (2D/3D,
@@ -187,6 +202,13 @@ which requires a paid Developer ID.
 
 ### Save & export
 
+- **Export Sheets to PDF** creates one vector page per selected sheet (or Model),
+  with linked raster images, drawing colors, layer/entity lineweights, and current
+  layer visibility. Choose drawing paper sizes or A4/A3/Letter/Tabloid/ARCH D,
+  drawing page setup, 1:1/1:50/1:100, or explicit Fit to page. Actual scales may
+  crop out-of-page content; export reports this. CTB/STB styles are not applied.
+
+
 - **Save (⌘S) / Save As (⇧⌘S)** write the full live document — every
   in-session edit, including modified or deleted original entities — back to
   DXF via the structural writer. Documents opened from DWG save as DXF.
@@ -239,6 +261,12 @@ point and renders it highlighted; `--debug-bounds` prints culling statistics.
 PNG output is rendered at 2× the requested `--size` for crisp README/social
 images. Additional flags (`--exec`, `--compare`, `--roundtrip`, …) exist for
 automation and the project's own verification harnesses.
+
+Export all paper layouts headlessly (add `--layout "Sheet name"` for one):
+
+```sh
+.build/release/NovaCAD --export-pdf sheets.pdf --pdf-fit drawing.dwg
+```
 
 Use `--layout "A-104. Furniture Arrangement"` to render a specific named
 paper sheet. This selects paper space and the editable renderer automatically.
@@ -345,8 +373,18 @@ Requires macOS 15+ and adds no further dependencies.
 ## Known limitations
 
 - Writes **DXF only** — native DWG writing requires the licensed ODA SDK.
-- No plot/print pipeline; no LISP; no 3D modeling or orbit views (2D canvas
-  with a high-performance CoreGraphics pipeline).
+- PDF sheet export is supported; native printer dialogs and CTB/STB plot styles
+  are not. No LISP, 3D modeling, or orbit views.
+- Paper viewports support top-down orthographic 2D views, scale/twist/target,
+  frozen layers, and rectangular or straight-polyline/circle clipping. Viewport
+  model content is display-only in Paper; switch to Model to edit it. Perspective,
+  3D/depth clipping, and curved-polyline clipping are reported as unsupported.
+- Local linked raster images support placement, clipping, and fade. Missing images
+  have placeholders and can be located through **Issues → Locate Images Folder**.
+  Brightness/contrast overrides are reported but not applied. WIPEOUT and OLE
+  objects remain unsupported and are now reported in the Issues panel.
+- Sheet layer counts refer to rendered geometry. Viewport counts use intersections
+  with the viewport rectangle; nonrectangular clipping can make these approximate.
 - `Export Markup as DXF` / `Save Copy with Markup` cover the primitive markup
   set (see the note under Save & export).
 - The AI Assistant is optional and requires your own provider/credentials;

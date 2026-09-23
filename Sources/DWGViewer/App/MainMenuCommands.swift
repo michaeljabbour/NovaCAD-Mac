@@ -76,6 +76,8 @@ extension FocusedValues {
 struct MainMenuCommands: Commands {
     @FocusedValue(\.novaCADCommandDispatch) private var dispatch: CommandDispatch?
 
+    @FocusedValue(\.novaCADFileDispatch) private var fileDispatch: FileDispatch?
+
     private var ready: Bool { (dispatch?.hasDocument ?? false) && !(dispatch?.isLoading ?? true) }
 
     var body: some Commands {
@@ -117,10 +119,8 @@ struct MainMenuCommands: Commands {
         // `.keyboardShortcut` on these items — the toolbar's own Save/Save
         // As buttons already own the real ⌘S/⇧⌘S bindings (same
         // no-duplicate-shortcut pattern as the Edit menu's Undo item below).
-        CommandGroup(after: .newItem) {
-            Divider()
-            menuItems(for: .file)
-        }
+        CommandGroup(replacing: .newItem) { FileMenuItems(dispatch: fileDispatch) }
+        CommandGroup(replacing: .saveItem) { }
         CommandGroup(replacing: .undoRedo) {
             // `replacing:`, not `after:` — this app has no `NSUndoManager`
             // wired into the responder chain (it has its own bespoke

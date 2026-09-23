@@ -394,6 +394,11 @@ final class RegenCoordinator {
             return RegenDelta(fullRebuild: true, revision: revision)
         }
 
+        if !parsed.store.images.isEmpty || !parsed.store.viewports.isEmpty {
+            fullRebuild()
+            return RegenDelta(fullRebuild: true, revision: revision)
+        }
+
         // `document.layers` is an IMMUTABLE `let` array on `DXFDocument` —
         // there is no way to append a single new entry to it short of
         // replacing `document` wholesale, which is exactly what a full

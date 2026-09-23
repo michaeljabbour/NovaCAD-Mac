@@ -94,6 +94,7 @@ final class EditableParsedDocument {
     var objects = ObjectsModel()
     /// View state only; nil retains legacy combined rendering for callers
     /// that have no sheet selection. All sheets remain in the editable store.
+    var resourceDirectories: [URL] = []
     var activePaperLayoutID: UInt64?
     var paperLayouts: [PaperLayout] { PaperLayout.sheets(in: self) }
 
@@ -116,7 +117,9 @@ enum EntityStoreParser {
             throw NSError(domain: "DXFParser", code: 1, userInfo: [NSLocalizedDescriptionKey:
                 "Binary DXF is not supported yet. Re-save as ASCII DXF (or open the DWG directly)."])
         }
-        return try scanIntoStore(data: data) { p in progress?(p) }
+        let result = try scanIntoStore(data: data) { p in progress?(p) }
+        result.resourceDirectories = [url.deletingLastPathComponent()]
+        return result
     }
 
     // MARK: - Pair (identical shape to DXFParser.Pair)
@@ -258,7 +261,7 @@ enum EntityStoreParser {
         // binary-chunk XDATA retention yet) so they're deliberately left off
         // this list; if a future phase reads them via `p.str` they'll need
         // adding here too, same as this bug's fix for 5/1000/1001/1005.
-        case 1, 2, 3, 6, 7, 8, 9, 5, 102, 330, 340, 360, 390, 410, 1000, 1001, 1005: return true
+        case 1, 2, 3, 6, 7, 8, 9, 5, 102, 330, 331, 340, 360, 390, 410, 1000, 1001, 1005: return true
         default: return false
         }
     }
@@ -437,6 +440,7 @@ enum EntityStoreParser {
         // (the overwhelming common case: most DXFs have no transparency
         // set), leaving `DXFLayer.transparency` at its 0 (opaque) default.
         var layTransparency: Int? = nil
+        var layLineweight: Int16 = -3
         var inLayerRecord = false
         var inLtypeRecord = false
 
@@ -459,6 +463,7 @@ enum EntityStoreParser {
             if let t = layTrue { layer.color = .rgb(t) }
             layer.isOffByDefault = layColor < 0
             layer.isFrozen = (layFlags & 1) != 0
+            layer.lineweight = layLineweight
             layer.linetypeId = Int(out.linetypeIdByName[layLtype.uppercased()] ?? 0)
             // Group 440's high byte (0x02) marks it as a transparency value
             // (as opposed to some other 440 use); only the low byte is the
@@ -860,13 +865,14 @@ enum EntityStoreParser {
                     guard currentTable == "LAYER" else { return }
                     inLayerRecord = true
                     layName = ""; layColor = 7; layTrue = nil; layFlags = 0; layLtype = "CONTINUOUS"; layHandle = 0
-                    layTransparency = nil
+                    layTransparency = nil; layLineweight = -3
                     for p in pairs {
                         switch p.code {
                         case 2: layName = p.str ?? ""
                         case 62: layColor = safeInt(p.num)
                         case 420: layTrue = UInt32(truncatingIfNeeded: safeInt(p.num)) & 0x00FF_FFFF
                         case 440: layTransparency = safeInt(p.num)
+                        case 370: layLineweight = Int16(clamping: safeInt(p.num))
                         case 70: layFlags = safeInt(p.num)
                         case 6: layLtype = p.str ?? "CONTINUOUS"
                         case 5: if let s = p.str, let v = UInt64(s, radix: 16) { layHandle = v }
@@ -1092,6 +1098,8 @@ enum EntityStoreParser {
                 for p in pairs where p.code == code { return p.str }
                 return nil
             }
+
+            func v(_ code: Int32) -> Vec3 { Vec3(x: d(code) ?? 0, y: d(code + 10) ?? 0, z: d(code + 20) ?? 0) }
 
             // `recognized` here is always one of the `EntityStoreParser.*Codes`
             // static sets declared above — already merged with
@@ -1486,15 +1494,38 @@ enum EntityStoreParser {
                 finish(.hatch, .hatch(payload, loops: loops),
                       recognized: Self.hatchCodes.union([440]))
 
-            // Entities with nothing useful to draw in a 2D viewer — the
-            // same discard category as DXFParser.makeGeoms (unchanged, out
-            // of scope for this phase's retention work). Any type not named
-            // here still falls through to the counted `default` path below
-            // rather than being drawn.
-            case "ATTDEF", "VIEWPORT", "MLEADER", "MULTILEADER",
-                 "ACAD_PROXY_ENTITY", "OLEFRAME", "OLE2FRAME", "IMAGE",
+            case "IMAGE":
+                var image = ImagePayload(origin: v(10), uVector: v(11), vVector: v(12),
+                    sizePxWidth: d(13) ?? 0, sizePxHeight: d(23) ?? 0,
+                    imageDefHandle: UInt64(s(340) ?? "0", radix: 16) ?? 0)
+                image.displayFlags = Int(d(70) ?? 3)
+                image.clipping = (d(280) ?? 0) != 0
+                image.clipInverted = (d(290) ?? 0) != 0
+                image.brightness = Int(d(281) ?? 50); image.contrast = Int(d(282) ?? 50)
+                image.fade = Int(d(283) ?? 0)
+                var vertex: Vec3?
+                for pair in pairs {
+                    if pair.code == 14 { if let vertex { image.clipVertices.append(vertex) }; vertex = Vec3(x: pair.num, y: 0) }
+                    if pair.code == 24 { vertex?.y = pair.num }
+                }
+                if let vertex { image.clipVertices.append(vertex) }
+                finish(.image, .image(image), recognized: Self.alwaysCommonCodes.union([10,20,30,11,21,31,12,22,32,13,23,340,70,280,281,282,283,14,24,71,91,290,90]))
+            case "VIEWPORT":
+                var viewport = ViewportPayload(centerPaper: v(10), widthPaper: d(40) ?? 0,
+                    heightPaper: d(41) ?? 0, viewCenter: v(12), viewHeight: d(45) ?? 0,
+                    twistDeg: d(51) ?? 0, status: Int32(d(68) ?? 1))
+                viewport.viewportID = Int(d(69) ?? 2); viewport.flags = Int(d(90) ?? 0)
+                viewport.target = v(17)
+                viewport.direction = Vec3(x: d(16) ?? 0, y: d(26) ?? 0, z: d(36) ?? 1)
+                viewport.frozenLayerHandles = pairs.filter { $0.code == 331 }.compactMap { UInt64($0.str ?? "", radix: 16) }
+                viewport.clipHandle = UInt64(s(340) ?? "0", radix: 16) ?? 0
+                finish(.viewport, .viewport(viewport), recognized: Self.alwaysCommonCodes.union([10,20,30,40,41,12,22,32,45,51,68,69,90,17,27,37,16,26,36,331,340]))
+            case "ATTDEF":
+                return // Block definitions, rendered via their instantiated ATTRIBs.
+            case "MLEADER", "MULTILEADER", "ACAD_PROXY_ENTITY", "OLEFRAME", "OLE2FRAME",
                  "BODY", "REGION", "3DSOLID", "SURFACE", "MESH", "TOLERANCE",
                  "WIPEOUT", "XLINE", "RAY", "SHAPE", "LIGHT":
+                out.skippedTypes[type, default: 0] += 1
                 return
 
             default:

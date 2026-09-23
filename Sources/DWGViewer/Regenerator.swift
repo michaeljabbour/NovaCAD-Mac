@@ -920,12 +920,20 @@ enum Regenerator {
         }
     }
 
+    // Keep the closure-mutated flag opaque to Swift's local flow analysis.
+    @inline(never) private static func expansionNeedsRebalance(_ truncated: Bool) -> Bool { truncated }
+
     static func build(from parsed: EditableParsedDocument,
                       parseSeconds: Double,
                       progress: (Double) -> Void) -> DXFDocument {
         let t0 = Date()
         let store = parsed.store
 
+        let sheetSupport = SheetRenderSupport(parsed)
+        var renderingPaper = false
+        var modelImages: [RasterPlacement] = []
+        var paperImages: [RasterPlacement] = []
+        var viewports: [PaperViewport] = []
         let paperLayout = parsed.paperLayouts.first { $0.id == parsed.activePaperLayoutID }
 
         // ---- Identify xrefs and route modern model/paper-space blocks ----
@@ -1129,7 +1137,7 @@ enum Regenerator {
             case .mtext: kind = .mtext
             case .attrib: kind = .attrib
             case .leader: kind = .leader
-            case .insert, .dimension: kind = .other
+            case .insert, .dimension, .image, .viewport: kind = .other
             default: return nil
             }
             return StoreEntityView(id: id, kind: kind, layerId: h.layerId, aci: h.aci,
@@ -1421,6 +1429,18 @@ enum Regenerator {
 
         func emitGeometry(_ e: StoreEntityView, _ h: EntityHeader, _ ctx: Ctx) {
             let (layer, color, ltype) = resolve(e, ctx)
+            if h.type == .image || h.type == .viewport {
+                guard !h.flags.contains(.invisible) else { return }
+                if h.type == .image, let image = sheetSupport.raster(store.images[Int(h.payload)], transform: ctx.t,
+                                                                    layer: Int(layer), xref: Int(ctx.xrefId)) {
+                    if renderingPaper { paperImages.append(image) } else { modelImages.append(image) }
+                    expandedCount += 1
+                } else if h.type == .viewport && renderingPaper,
+                          let viewport = sheetSupport.viewport(store.viewports[Int(h.payload)], transform: ctx.t, layer: Int(layer)) {
+                    viewports.append(viewport)
+                }
+                return
+            }
             let key = GroupKey(layerId: layer, color: color, linetypeId: ltype, xrefId: ctx.xrefId)
             let a = acc(for: key)
             expandedCount += 1
@@ -1443,13 +1463,13 @@ enum Regenerator {
         // Swift compiler's flow analysis incorrectly concludes otherwise for
         // this closure-heavy mutation pattern; the `_ = walkDone` dance is a
         // minimal silence for that false-positive warning.
-        let walkDone = truncated
-        if walkDone {
+        if expansionNeedsRebalance(truncated) {
             var topModelInserts = 0
             forEach(.space(.model)) { id in
                 if let h = store.header(id), !h.flags.contains(.deleted), insertLike(h) != nil { topModelInserts += 1 }
             }
             accs = [:]
+            modelImages.removeAll(keepingCapacity: true)
             inserts.removeAll(keepingCapacity: true)
             activeBlockIndices.removeAll(keepingCapacity: true)
             for i in layerCounts.indices { layerCounts[i] = 0 }
@@ -1480,6 +1500,7 @@ enum Regenerator {
         accs = [:]
         let modelInsertCount = inserts.count
         progress(0.6)
+        renderingPaper = true
         walk(.space(.paper), Ctx())
         var paperAccs = accs
         accs = [:]
@@ -1514,8 +1535,10 @@ enum Regenerator {
             return (groups, total.isNull ? .zero : total)
         }
 
-        let (modelGroups, modelBounds) = finalize(&modelAccs)
-        let (paperGroups, paperBounds) = finalize(&paperAccs)
+        let (modelGroups, rawModelBounds) = finalize(&modelAccs)
+        let (paperGroups, rawPaperBounds) = finalize(&paperAccs)
+        let modelBounds = modelImages.reduce(modelGroups.isEmpty ? CGRect.null : rawModelBounds) { $0.union($1.bounds) }
+        let paperBounds = viewports.reduce(paperImages.reduce(paperGroups.isEmpty ? CGRect.null : rawPaperBounds) { $0.union($1.bounds) }) { $0.union($1.bounds) }
 
         func robustFit(_ groups: [RenderGroup], full: CGRect) -> CGRect {
             var count = 0
@@ -1554,8 +1577,8 @@ enum Regenerator {
             return r.intersection(full).isNull ? full : r
         }
 
-        let modelFit = robustFit(modelGroups, full: modelBounds)
-        let paperFit = robustFit(paperGroups, full: paperBounds)
+        let modelFit = modelImages.isEmpty ? robustFit(modelGroups, full: modelBounds.isNull ? .zero : modelBounds) : modelBounds
+        let paperFit = paperImages.isEmpty && viewports.isEmpty ? robustFit(paperGroups, full: paperBounds.isNull ? .zero : paperBounds) : paperBounds
 
         var layers = parsed.layers
         for i in layers.indices { layers[i].entityCount = layerCounts[i] }
@@ -1576,11 +1599,14 @@ enum Regenerator {
 
         let doc = DXFDocument(layers: layers, linetypes: linetypes, xrefs: xrefs,
                            modelGroups: modelGroups, paperGroups: paperGroups,
-                           modelBounds: modelBounds, paperBounds: paperBounds,
+                           modelBounds: modelBounds.isNull ? .zero : modelBounds, paperBounds: paperBounds.isNull ? .zero : paperBounds,
                            modelFitBounds: modelFit, paperFitBounds: paperFit,
                            inserts: inserts, modelInsertCount: modelInsertCount,
                            unitsLabel: unitsLabel, stats: stats)
         doc.insUnits = parsed.insUnits
+        doc.modelImages = modelImages; doc.paperImages = paperImages; doc.paperViewports = viewports
+        doc.renderingWarnings = sheetSupport.warnings.sorted()
+        doc.renderingWarnings += parsed.skippedTypes.sorted { $0.key < $1.key }.map { "\($0.value) unsupported \($0.key) entities omitted from display and export." }
 
         // ---- Capture stampable block symbols (bounded) ----
         let candidates = insertCounts

@@ -134,18 +134,13 @@ struct WelcomeView: View {
 /// changelog; older entries should be trimmed as they stop being "new."
 enum WhatsNew {
     static let recentHighlights: [String] = [
-        "View one drawing sheet at a time, read common Russian layer names in English, and show, hide, or isolate multiple layers with a single click.",
-        "You can now choose NovaCAD in Finder's Open With menu for DWG and DXF drawings immediately after installation.",
-        "You're now notified after opening a drawing if any external references couldn't be found or if the drawing was too large to fully resolve them all.",
-        "Select a line or polyline to set its thickness right in the Properties pane — and it now actually draws thicker on screen.",
-        "Select an enclosed shape (a closed polyline, rectangle, or circle) to fill/hatch it with a solid color or diagonal lines, with adjustable density and transparency.",
-        "Travel distances are now measured down the middle of each aisle instead of along its edge lines — the old method could report nearly double the real distance.",
-        "Ask for travel distances from a marketplace to every station in one step, and get a CSV with both one-way and round-trip figures on every row.",
-        "Select an object on the drawing and say \"measure from this\" — the AI Assistant can now see what you have selected.",
-        "The AI Assistant can draw each travel path on the drawing so you can check the route it measured and adjust it yourself.",
-        "The AI Assistant now shows whether it's working or stalled, and a new reset button restarts it WITHOUT clearing your conversation.",
-        "Shaded aisles, dock aprons, and any filled/hatched area are now fully editable — drag a corner, or use Stretch to extend one.",
-        "The AI Assistant is more reliable — it keeps your chosen model when you open Settings and now tells you clearly when the model or local opencode server can't be reached instead of going quiet.",
+        "Use the File menu to open recent drawings, save edits, recover unsaved work, and export selected sheets to PDF.",
+        "Reopen drawings at your last sheet and zoom, or save named views with their layer visibility.",
+        "Show only layers used on the current sheet and zoom directly to a layer.",
+        "View linked images and 2D paper viewports, with clear notices when drawing content is missing or unsupported.",
+        "Your edits now get automatic recovery copies without overwriting the original drawing.",
+        "View separate sheets and search layer names in English or their original language."
+
     ]
 }
 

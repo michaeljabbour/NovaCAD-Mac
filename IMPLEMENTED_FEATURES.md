@@ -3,7 +3,15 @@
 current_status = [X]
 
 All features listed below have been verified as implemented in the codebase.
-No known regressions or broken features found.
+Known rendering/export limits are documented in README.md.
+
+## File, Workspace & Sheets
+[X] **File menus** — native macOS and in-window menus with Open Recent, Save/Save As, reload, recovery, markup and PDF export
+[X] **Workspace memory** — per-drawing sheet/camera/visibility plus named view presets, matching layers by original name
+[X] **Sheet-aware layers** — optional current-sheet filtering, geometry counts, and Zoom to Layer
+[X] **Recovery** — detached background DXF checkpoints after edits; recovery browser; originals never auto-overwritten; atomic saves
+[X] **Sheet fidelity** — linked raster images, top-down 2D clipped viewports, frozen viewport layers, visible missing/unsupported-content diagnostics
+[X] **PDF export** — selected sheets as separate vector pages; physical paper sizes, explicit scale or fit, entity/layer lineweights; CTB/STB not applied
 
 ## Core Viewer Capabilities
 [X] **DXF/DWG file loading** — supports .dxf, .dwg (via ODA File Converter or LibreDWG), .zip (eTransmit packages), and folders of drawings

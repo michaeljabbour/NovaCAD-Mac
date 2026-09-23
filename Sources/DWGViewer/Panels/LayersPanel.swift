@@ -67,6 +67,9 @@ struct LayersPanel: View {
     /// layer, including ones an edit created that the panel/search couldn't
     /// even show you until `liveLayerIds` fixed that.
     let onDeleteLayer: (Int) -> Void
+    var onZoomToLayer: (Int) -> Void = { _ in }
+    @AppStorage("layersInCurrentSheetOnly") private var currentSheetOnly = true
+    var sheetUsage: [Int: LayerUsage] = [:]
 
     @State private var isAddingLayer = false
     @State private var newLayerName = ""
@@ -340,6 +343,7 @@ struct LayersPanel: View {
                 if let liveLayerIds, liveLayerIds.contains(Int32($0.id)) { return true }
                 return $0.entityCount > 0 || visibility.sessionCreatedLayerIds.contains($0.id)
             }
+            .filter { !currentSheetOnly || sheetUsage[$0.id] != nil || visibility.sessionCreatedLayerIds.contains($0.id) }
             .filter { LayerDisplayName.matches($0.name, search: filter) }
             .filter { layer in
                 // Omit layers belonging to a toggled-off xref.
@@ -427,6 +431,9 @@ struct LayersPanel: View {
                 .padding(.horizontal, 10)
                 .padding(.bottom, 6)
 
+            Toggle("Only layers on this \(space == .paper ? "sheet" : "model")", isOn: $currentSheetOnly)
+                .font(.caption).toggleStyle(.checkbox)
+                .padding(.horizontal, 10).padding(.bottom, 6)
             layerActions(doc: doc)
 
             if isAddingLayer {
@@ -577,7 +584,7 @@ struct LayersPanel: View {
                         Text(originalDisplayName(layer)).lineLimit(1)
                     }
                     Spacer(minLength: 2)
-                    Text("\(layer.entityCount.formatted()) objects").fixedSize()
+                    Text("\((sheetUsage[layer.id]?.count ?? 0).formatted()) objects").fixedSize()
                 }
                 .font(.caption2)
                 .foregroundColor(.secondary)
@@ -610,6 +617,8 @@ struct LayersPanel: View {
                 isolation.isolate([layer.id], allLayerIDs: Set(doc.layers.map(\.id)),
                                   hidden: &visibility.hiddenLayerIds)
             }
+            Button("Zoom to Layer") { onZoomToLayer(layer.id) }
+                .disabled(sheetUsage[layer.id] == nil)
             Button("Select Objects on Layer") {
                 if let doc = document { selectLayer(layerIds: [layer.id], doc: doc) }
             }

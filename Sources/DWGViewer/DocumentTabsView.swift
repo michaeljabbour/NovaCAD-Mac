@@ -30,6 +30,7 @@ struct DocumentTabsView: View {
     /// cause the sheet to reappear mid-session from some other state change
     /// re-triggering the `.sheet(isPresented:)` binding.
     @State private var showingWelcome: Bool
+    @State private var showingRecovery = false
 
     init() {
         let first = DocumentTab()
@@ -51,7 +52,9 @@ struct DocumentTabsView: View {
                 Divider()
             }
             ContentView(session: activeTab.session, settings: settings,
-                       onOpenInNewTab: { url in openInNewTab(url: url) })
+                       onOpenInNewTab: { url in openInNewTab(url: url) },
+                       onNewTab: addTab, onCloseTab: { closeTab(activeTab) },
+                       onRecover: { showingRecovery = true })
                 // Fresh view identity per tab: each tab gets its own ContentView
                 // @State (command bar text, popovers, etc.) rather than
                 // inheriting whatever the previously active tab left behind.
@@ -60,7 +63,20 @@ struct DocumentTabsView: View {
                 // lives on the DocumentSession the tab owns, not on the view.
                 .id(activeTab.id)
         }
+        .sheet(isPresented: $showingRecovery) {
+            RecoveryBrowser { entry in
+                let tab = DocumentTab()
+                tab.session.pendingRecovery = entry
+                tab.session.pendingOpenURL = RecoveryStore.root.appendingPathComponent(entry.snapshotName)
+                tabs.append(tab); activeTabID = tab.id
+            }
+        }
+        .onChange(of: showingWelcome) { _, value in
+            if !value && !RecoveryStore.entries().isEmpty { showingRecovery = true }
+        }
         .onAppear {
+            if !showingWelcome && !RecoveryStore.entries().isEmpty { showingRecovery = true }
+
             // Drain any external "open this file" request that arrived
             // before this view existed (the common cold-launch ordering —
             // see `ExternalOpenRequestQueue`'s doc comment) into the
@@ -135,7 +151,7 @@ struct DocumentTabsView: View {
     private func tabButton(_ tab: DocumentTab) -> some View {
         let isActive = tab.id == activeTabID
         return HStack(spacing: 6) {
-            Text(tab.displayName)
+            Text(tab.displayName + (tab.session.hasUnsavedChanges ? " •" : ""))
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .font(.caption)
@@ -164,6 +180,8 @@ struct DocumentTabsView: View {
     }
 
     private func closeTab(_ tab: DocumentTab) {
+        tab.session.persistWorkspace()
+        tab.session.checkpointRecovery()
         guard tabs.count > 1 else {
             // Never go to zero tabs — reset the last one to a fresh empty tab.
             let fresh = DocumentTab()

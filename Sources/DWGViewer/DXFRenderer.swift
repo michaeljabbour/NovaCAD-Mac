@@ -17,6 +17,7 @@ struct RenderParams: Equatable {
     /// Rendering quality 1...5: 1 = fastest (coarse decimation, no AA),
     /// 5 = superb (near-lossless detail). See RenderQuality.
     var quality = 3
+    var vectorOutput = false
     /// `RegenCoordinator.revision` at the time these params were built
     /// (Phase 1.7 live cutover; 0 for the old render-only path, which never
     /// mutates its `DXFDocument` after load). `DXFCanvasView.Coordinator`

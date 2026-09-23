@@ -240,6 +240,13 @@ struct ImagePayload {
     var uVector: Vec3; var vVector: Vec3
     var sizePxWidth: Double; var sizePxHeight: Double
     var imageDefHandle: UInt64 = 0
+    var displayFlags: Int = 3
+    var clipping = false
+    var clipVertices: [Vec3] = []
+    var clipInverted = false
+    var brightness: Int = 50
+    var contrast: Int = 50
+    var fade: Int = 0
 }
 /// Placeholder shape for Phase 11 (layouts/viewports) — kept minimal since
 /// nothing consumes it yet; the real field set is designed there.
@@ -249,6 +256,12 @@ struct ViewportPayload {
     var viewCenter: Vec3; var viewHeight: Double
     var twistDeg: Double = 0
     var status: Int32 = 1
+    var viewportID: Int = 0
+    var flags: Int = 0
+    var target = Vec3(x: 0, y: 0, z: 0)
+    var direction = Vec3(x: 0, y: 0, z: 1)
+    var frozenLayerHandles: [UInt64] = []
+    var clipHandle: UInt64 = 0
 }
 /// Retained as an INSERT-like block reference today, matching current parser
 /// behavior (DIMENSION renders via its anonymous block). Full dimension

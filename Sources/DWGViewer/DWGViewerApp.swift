@@ -48,6 +48,9 @@ final class NovaCADAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        MainActor.assumeIsolated { DocumentSessionRegistry.checkpointAll() }
+        RecoveryStore.queue.sync { } // Finish queued recovery writes before process exit.
+
         // Synchronous SIGTERM to the currently-managed `opencode serve`
         // process, if any — `applicationWillTerminate` does not reliably
         // support `await`ing the actor-isolated `OpenCodeServerClient

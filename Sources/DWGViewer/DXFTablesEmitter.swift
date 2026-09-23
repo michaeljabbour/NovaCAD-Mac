@@ -131,7 +131,7 @@ extension DXFStructuralWriter {
             let ltName = l.linetypeId >= 0 && l.linetypeId < parsed.linetypes.count
                 ? parsed.linetypes[l.linetypeId].name : "CONTINUOUS"
             out.pair(6, ltName)
-            if version.supportsLineweight { out.pair(370, -3) }
+            if version.supportsLineweight { out.pair(370, Int(l.lineweight)) }
             if version.hasHandles {
                 out.handlePair(390, 0)   // plot-style handle placeholder — this codebase doesn't retain the original PLOTSTYLE dictionary linkage
             }

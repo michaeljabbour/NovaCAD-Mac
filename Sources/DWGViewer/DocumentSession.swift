@@ -1,6 +1,7 @@
 import SwiftUI
 import CADCore
 import Foundation
+import Combine
 
 /// View/markup snapshot restored after a Reload so it doesn't reset.
 struct ReloadSnapshot {
@@ -46,6 +47,33 @@ struct ReloadSnapshot {
 /// never being reassigned by an edit.
 @MainActor
 final class DocumentSession: ObservableObject {
+    @Published var presets: [WorkspacePreset] = []
+    @Published var recoveryStatus = ""
+    @Published var workspaceError: String?
+    var pendingWorkspace: DrawingWorkspace?
+    var pendingRecovery: RecoveryEntry?
+    var savedRevision: UInt64 = 0
+    var lastRecoveryRevision: UInt64?
+    var recoveredDocument = false
+    var recoveredFromID: UUID?
+    var layerUsageCache: (ObjectIdentifier, UInt64, SpaceSelection, [Int: LayerUsage])?
+    var recoveryID = UUID()
+    var recoveryGeneration = 0
+    var recoveryTask: Task<Void, Never>?
+    private var persistenceObservers = Set<AnyCancellable>()
+
+    init() {
+        DocumentSessionRegistry.sessions.add(self)
+        Publishers.Merge4($zoom.map { _ in () }, $pan.map { _ in () },
+                          $visibility.map { _ in () }, $space.map { _ in () })
+            .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
+            .sink { [weak self] _ in self?.persistWorkspace() }
+            .store(in: &persistenceObservers)
+        Timer.publish(every: 30, on: .main, in: .common).autoconnect()
+            .sink { [weak self] _ in self?.checkpointRecovery() }
+            .store(in: &persistenceObservers)
+    }
+
     @Published var regen: RegenCoordinator?
     /// Render-only view of the current document — unchanged call shape for
     /// the ~50+ existing `document.foo` reads in ContentView/DXFCanvasView.
@@ -279,6 +307,7 @@ final class DocumentSession: ObservableObject {
         for op in entry.ops { if case .add(let id) = op { added.append(id) } }
         if selectNewEntities, !added.isEmpty { selection = Set(added) }
         objectWillChange.send()
+        scheduleRecovery()
         return added
     }
 
@@ -305,6 +334,7 @@ final class DocumentSession: ObservableObject {
         guard doc.revision != revisionBefore else { return }
         regen.fullRebuild()
         objectWillChange.send()
+        scheduleRecovery()
     }
 
     /// Undo one transaction. `EditableDocument.undo()` mutates the
@@ -324,6 +354,7 @@ final class DocumentSession: ObservableObject {
         selection = selection.filter { !regen.parsed.store.isDeleted($0) }
         pruneStaleToolObjectIDs()
         objectWillChange.send()
+        scheduleRecovery()
     }
 
     func redo() {
@@ -333,6 +364,7 @@ final class DocumentSession: ObservableObject {
         selection = selection.filter { !regen.parsed.store.isDeleted($0) }
         pruneStaleToolObjectIDs()
         objectWillChange.send()
+        scheduleRecovery()
     }
 
     /// Phase 4.2: an in-progress Move/Copy/Rotate/Scale/Mirror gesture keeps

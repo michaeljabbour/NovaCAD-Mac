@@ -142,6 +142,29 @@ enum SnapshotMode {
         }
         // ================== end Phase 3.4: --roundtrip ===================
 
+        if let index = args.firstIndex(of: "--export-pdf") {
+            guard args.count > index + 2, let input = args.last else { exit(2) }
+            do {
+                let coordinator = try RegenCoordinator.loadPackage(url: URL(fileURLWithPath: input))
+                let parsed = coordinator.parsed
+                var sheets: [UInt64?] = parsed.paperLayouts.map { Optional($0.id) }
+                if let i = args.firstIndex(of: "--layout"), args.count > i + 1 {
+                    guard let sheet = parsed.paperLayouts.first(where: { $0.name == args[i + 1] }) else {
+                        print("Unknown layout"); exit(2)
+                    }
+                    sheets = [sheet.id]
+                }
+                if sheets.isEmpty { sheets = [nil] }
+                let warnings = try SheetPDFExporter.write(parsed, to: URL(fileURLWithPath: args[index + 1]),
+                    options: PDFExportOptions(sheets: sheets, scale: args.contains("--pdf-fit") ? .fit : .pageSetup)) { done, total in
+                        print("PDF page \(done)/\(total)")
+                    }
+                for warning in warnings { print("PDF warning: \(warning)") }
+                print("PDF exported: \(args[index + 1])")
+                exit(0)
+            } catch { print("PDF export failed: \(error.localizedDescription)"); exit(1) }
+        }
+
         guard let flagIdx = args.firstIndex(of: "--snapshot") else { return }
         guard args.count > flagIdx + 1 else {
             FileHandle.standardError.write(Data("usage: DWGViewer --snapshot out.png [--size WxH] [--space paper] [--light] file.dxf\n".utf8))
