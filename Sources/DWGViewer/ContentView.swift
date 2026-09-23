@@ -753,7 +753,7 @@ struct ContentView: View {
     }
 
     private var quickAccessControls: some View {
-        HStack(spacing: 10) {
+        Group {
             Menu("File") { FileMenuItems(dispatch: fileDispatch) }
                 .fixedSize().fontWeight(.semibold)
             Button(action: saveDrawing) { Image(systemName: "square.and.arrow.down") }
@@ -823,84 +823,84 @@ struct ContentView: View {
                     Label("Select", systemImage: "cursorarrow")
                 }
                 Button { startMove() } label: {
-                    Label("Move  (M)", systemImage: "arrow.up.and.down.and.arrow.left.and.right")
+                    Label("Move", systemImage: "arrow.up.and.down.and.arrow.left.and.right")
                 }
                 .disabled(selection.isEmpty)
                 Button { startModify(.copy) } label: {
-                    Label("Copy  (CO)", systemImage: "plus.square.on.square")
+                    Label("Duplicate", systemImage: "plus.square.on.square")
                 }
                 Button { startModify(.rotate) } label: {
-                    Label("Rotate  (RO)", systemImage: "rotate.right")
+                    Label("Rotate", systemImage: "rotate.right")
                 }
                 Button { startModify(.scale) } label: {
-                    Label("Scale  (SC)", systemImage: "arrow.up.left.and.arrow.down.right")
+                    Label("Scale", systemImage: "arrow.up.left.and.arrow.down.right")
                 }
                 Button { startModify(.mirror) } label: {
-                    Label("Mirror  (MI)", systemImage: "arrow.left.and.right.righttriangle.left.righttriangle.right")
+                    Label("Mirror", systemImage: "arrow.left.and.right.righttriangle.left.righttriangle.right")
                 }
                 Divider()
                 Button { setMeasure(.distance) } label: {
-                    Label("Measure Distance  (DI)", systemImage: "ruler")
+                    Label("Measure Distance", systemImage: "ruler")
                 }
                 Button { setMeasure(.area) } label: {
-                    Label("Measure Area  (AREA)", systemImage: "skew")
+                    Label("Measure Area", systemImage: "skew")
                 }
                 Button { setMeasure(.radius) } label: {
-                    Label("Measure Radius  (RAD)", systemImage: "circle.dashed")
+                    Label("Measure Radius", systemImage: "circle.dashed")
                 }
                 Button { setMeasure(.angle) } label: {
-                    Label("Measure Angle  (ANG)", systemImage: "angle")
+                    Label("Measure Angle", systemImage: "angle")
                 }
                 Divider()
                 Button { startDimensionTool(kind: .aligned) } label: {
-                    Label("Dimension (Aligned)  (DIMALIGNED)", systemImage: "ruler")
+                    Label("Dimension (Aligned)", systemImage: "ruler")
                 }
                 Button { startDimensionTool(kind: .linear) } label: {
-                    Label("Dimension (Linear)  (DIMLINEAR)", systemImage: "ruler.fill")
+                    Label("Dimension (Linear)", systemImage: "ruler.fill")
                 }
                 Divider()
                 Button { setDraft(.line) } label: {
-                    Label("Line  (L)", systemImage: "line.diagonal")
+                    Label("Line", systemImage: "line.diagonal")
                 }
                 Button { setDraft(.polyline) } label: {
-                    Label("Polyline  (PL)", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+                    Label("Polyline", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
                 }
                 Button { setDraft(.circle) } label: {
-                    Label("Circle  (C)", systemImage: "circle")
+                    Label("Circle", systemImage: "circle")
                 }
                 Button { setDraft(.arc3pt) } label: {
-                    Label("Arc, 3 points  (A)", systemImage: "point.3.connected.trianglepath.dotted")
+                    Label("Arc, 3 points", systemImage: "point.3.connected.trianglepath.dotted")
                 }
                 Button { setDraft(.rect) } label: {
-                    Label("Rectangle  (REC)", systemImage: "rectangle")
+                    Label("Rectangle", systemImage: "rectangle")
                 }
                 Button { setDraft(.polygon) } label: {
-                    Label("Polygon  (POL)", systemImage: "hexagon")
+                    Label("Polygon", systemImage: "hexagon")
                 }
                 Button { setDraft(.text) } label: {
-                    Label("Text Note  (T)", systemImage: "textformat")
+                    Label("Text Note", systemImage: "textformat")
                 }
                 Divider()
                 Button { setDraft(.ellipse) } label: {
-                    Label("Ellipse  (EL)", systemImage: "oval")
+                    Label("Ellipse", systemImage: "oval")
                 }
                 Button { setDraft(.pointEnt) } label: {
-                    Label("Point  (PO)", systemImage: "smallcircle.filled.circle")
+                    Label("Point", systemImage: "smallcircle.filled.circle")
                 }
                 Button { setDraft(.splineFit) } label: {
-                    Label("Spline  (SPL)", systemImage: "scribble")
+                    Label("Spline", systemImage: "scribble")
                 }
                 Button { setDraft(.splineCV) } label: {
-                    Label("Spline (Control Vertices)  (SPLINECV)", systemImage: "point.3.connected.trianglepath.dotted")
+                    Label("Spline (Control Vertices)", systemImage: "point.3.connected.trianglepath.dotted")
                 }
                 Button { setDraft(.face3d) } label: {
-                    Label("3D Face  (3DF)", systemImage: "triangle")
+                    Label("3D Face", systemImage: "triangle")
                 }
                 Button { setDraft(.region) } label: {
-                    Label("Region  (REG)", systemImage: "square.dashed")
+                    Label("Region", systemImage: "square.dashed")
                 }
                 Button { startArray() } label: {
-                    Label("Array…  (AR)", systemImage: "square.grid.3x3")
+                    Label("Array…", systemImage: "square.grid.3x3")
                 }
                 if let doc = document, !doc.stampableBlockNames.isEmpty {
                     Menu {
@@ -918,7 +918,7 @@ struct ContentView: View {
                     }
                 }
                 Button { startBlock() } label: {
-                    Label("Block  (B)", systemImage: "cube")
+                    Label("Block", systemImage: "cube")
                 }
                 if let doc = document, !doc.stampableBlockNames.isEmpty {
                     Menu {
@@ -930,22 +930,22 @@ struct ContentView: View {
                             }
                         }
                     } label: {
-                        Label("Insert Block…  (I)", systemImage: "cube.transparent")
+                        Label("Insert Block…", systemImage: "cube.transparent")
                     }
                 }
                 Button { startExplode() } label: {
-                    Label("Explode  (X)", systemImage: "square.dashed")
+                    Label("Explode", systemImage: "square.dashed")
                 }
                 Button { startAttachXref() } label: {
                     Label("Attach Xref…", systemImage: "link")
                 }
                 Divider()
                 Button { copySelectionToPasteboard() } label: {
-                    Label("Copy  (⌘C)", systemImage: "doc.on.doc")
+                    Label("Copy", systemImage: "doc.on.doc")
                 }
                 .disabled(selection.isEmpty)
                 Button { startClipboardPaste() } label: {
-                    Label("Paste…  (⌘V)", systemImage: "doc.on.clipboard")
+                    Label("Paste…", systemImage: "doc.on.clipboard")
                 }
                 .disabled(PasteboardSnapshot.read(from: .general) == nil)
                 Button { pasteAtOriginalCoordinates() } label: {
@@ -954,11 +954,11 @@ struct ContentView: View {
                 .disabled(PasteboardSnapshot.read(from: .general) == nil)
                 Divider()
                 Button { setDraft(.erase) } label: {
-                    Label("Erase Markup  (E)", systemImage: "eraser")
+                    Label("Erase Markup", systemImage: "eraser")
                 }
                 Button {
                     undoLast()
-                } label: { Label("Undo  (U / ⌘Z)", systemImage: "arrow.uturn.backward") }
+                } label: { Label("Undo", systemImage: "arrow.uturn.backward") }
                     .disabled(!session.canUndo)
                 Divider()
                 Button { saveMarkupAsDXF() } label: {
@@ -971,7 +971,7 @@ struct ContentView: View {
                 .disabled(!hasMarkup || document?.sourceDXFURL == nil)
                 Divider()
                 Button { extractDataToCSV() } label: {
-                    Label("Extract Data…  (DX)", systemImage: "tablecells")
+                    Label("Extract Data…", systemImage: "tablecells")
                 }
                 Button { importDataFromCSV() } label: {
                     Label("Import Data…", systemImage: "square.and.arrow.down.on.square.fill")
@@ -1408,7 +1408,10 @@ struct ContentView: View {
             .onChange(of: proxy.size) { _, newSize in
                 let oldSize = viewSize
                 let hadSize = oldSize.width > 1
+                let fitPan = CGSize(width: oldSize.width / 2 + (bounds.midX - fullBounds.midX) * zoom,
+                                    height: oldSize.height / 2 - (bounds.midY - fullBounds.midY) * zoom)
                 let wasFitted = hadSize && abs(zoom - fitZoom(for: fullBounds)) < max(zoom * 0.01, 1e-9)
+                    && abs(pan.width - fitPan.width) < 2 && abs(pan.height - fitPan.height) < 2
                 viewSize = newSize
                 if let saved = session.pendingWorkspace { _ = session.restoreWorkspace(saved) }
                 else if searchVisible, searchResults.indices.contains(searchCursor) { performGoTo(hit: searchResults[searchCursor]) }
@@ -3883,18 +3886,18 @@ struct ContentView: View {
             }
         }
         if !selection.isEmpty {
-            items.append(ContextMenuAction(title: "Move  (M)", action: { [self] in startMove() }))
-            items.append(ContextMenuAction(title: "Copy  (CO)", action: { [self] in startModify(.copy) }))
-            items.append(ContextMenuAction(title: "Rotate  (RO)", action: { [self] in startModify(.rotate) }))
-            items.append(ContextMenuAction(title: "Scale  (SC)", action: { [self] in startModify(.scale) }))
-            items.append(ContextMenuAction(title: "Mirror  (MI)", action: { [self] in startModify(.mirror) }))
-            items.append(ContextMenuAction(title: "Trim (selection = cutting edges)  (TR)", action: { [self] in startTrimExtend(.trim) }))
-            items.append(ContextMenuAction(title: "Extend (selection = boundary edges)  (EX)", action: { [self] in startTrimExtend(.extend) }))
-            items.append(ContextMenuAction(title: "Stretch  (STR)", action: { [self] in startStretch() }))
-            items.append(ContextMenuAction(title: "Join  (J)", action: { [self] in startJoin() }))
-            items.append(ContextMenuAction(title: "Explode  (X)", action: { [self] in startExplode() }))
-            items.append(ContextMenuAction(title: "Block  (B)", action: { [self] in startBlock() }))
-            items.append(ContextMenuAction(title: "Array…  (AR)", action: { [self] in startArray() }))
+            items.append(ContextMenuAction(title: "Move", action: { [self] in startMove() }))
+            items.append(ContextMenuAction(title: "Duplicate", action: { [self] in startModify(.copy) }))
+            items.append(ContextMenuAction(title: "Rotate", action: { [self] in startModify(.rotate) }))
+            items.append(ContextMenuAction(title: "Scale", action: { [self] in startModify(.scale) }))
+            items.append(ContextMenuAction(title: "Mirror", action: { [self] in startModify(.mirror) }))
+            items.append(ContextMenuAction(title: "Trim (selection = cutting edges)", action: { [self] in startTrimExtend(.trim) }))
+            items.append(ContextMenuAction(title: "Extend (selection = boundary edges)", action: { [self] in startTrimExtend(.extend) }))
+            items.append(ContextMenuAction(title: "Stretch", action: { [self] in startStretch() }))
+            items.append(ContextMenuAction(title: "Join", action: { [self] in startJoin() }))
+            items.append(ContextMenuAction(title: "Explode", action: { [self] in startExplode() }))
+            items.append(ContextMenuAction(title: "Block", action: { [self] in startBlock() }))
+            items.append(ContextMenuAction(title: "Array…", action: { [self] in startArray() }))
             // "Delete" — removes the selected object(s) from the drawing.
             // Works for ANY selected entity (original geometry or markup)
             // via `deleteSelection()`; the deletion is an in-memory,
@@ -3929,25 +3932,25 @@ struct ContentView: View {
         }
         items.append(ContextMenuAction(title: "Select mode", action: { [self] in setTool(select: true) }))
         items.append(.separator)
-        items.append(ContextMenuAction(title: "Line  (L)", action: { [self] in setDraft(.line) }))
-        items.append(ContextMenuAction(title: "Polyline  (PL)", action: { [self] in setDraft(.polyline) }))
-        items.append(ContextMenuAction(title: "Circle  (C)", action: { [self] in setDraft(.circle) }))
-        items.append(ContextMenuAction(title: "Rectangle  (REC)", action: { [self] in setDraft(.rect) }))
-        items.append(ContextMenuAction(title: "Text Note  (T)", action: { [self] in setDraft(.text) }))
+        items.append(ContextMenuAction(title: "Line", action: { [self] in setDraft(.line) }))
+        items.append(ContextMenuAction(title: "Polyline", action: { [self] in setDraft(.polyline) }))
+        items.append(ContextMenuAction(title: "Circle", action: { [self] in setDraft(.circle) }))
+        items.append(ContextMenuAction(title: "Rectangle", action: { [self] in setDraft(.rect) }))
+        items.append(ContextMenuAction(title: "Text Note", action: { [self] in setDraft(.text) }))
         items.append(.separator)
-        items.append(ContextMenuAction(title: "Trim  (TR)", action: { [self] in startTrimExtend(.trim) }))
-        items.append(ContextMenuAction(title: "Extend  (EX)", action: { [self] in startTrimExtend(.extend) }))
-        items.append(ContextMenuAction(title: "Fillet  (F)", action: { [self] in startFilletChamfer(.fillet) }))
-        items.append(ContextMenuAction(title: "Chamfer  (CHA)", action: { [self] in startFilletChamfer(.chamfer) }))
-        items.append(ContextMenuAction(title: "Offset  (O)", action: { [self] in startOffset() }))
+        items.append(ContextMenuAction(title: "Trim", action: { [self] in startTrimExtend(.trim) }))
+        items.append(ContextMenuAction(title: "Extend", action: { [self] in startTrimExtend(.extend) }))
+        items.append(ContextMenuAction(title: "Fillet", action: { [self] in startFilletChamfer(.fillet) }))
+        items.append(ContextMenuAction(title: "Chamfer", action: { [self] in startFilletChamfer(.chamfer) }))
+        items.append(ContextMenuAction(title: "Offset", action: { [self] in startOffset() }))
         items.append(.separator)
-        items.append(ContextMenuAction(title: "Measure Distance  (DI)", action: { [self] in setMeasure(.distance) }))
-        items.append(ContextMenuAction(title: "Measure Area  (AREA)", action: { [self] in setMeasure(.area) }))
+        items.append(ContextMenuAction(title: "Measure Distance", action: { [self] in setMeasure(.distance) }))
+        items.append(ContextMenuAction(title: "Measure Area", action: { [self] in setMeasure(.area) }))
         items.append(ContextMenuAction(title: "Dimension (Aligned)", action: { [self] in startDimensionTool(kind: .aligned) }))
         items.append(ContextMenuAction(title: "Dimension (Linear)", action: { [self] in startDimensionTool(kind: .linear) }))
         items.append(.separator)
         items.append(ContextMenuAction(title: "Zoom Fit", action: { [self] in fitButtonPressed() }))
-        items.append(ContextMenuAction(title: "Undo  (U)", action: { [self] in undoLast() }))
+        items.append(ContextMenuAction(title: "Undo", action: { [self] in undoLast() }))
         return items
     }
 
