@@ -21,6 +21,7 @@ struct PropertiesPanel: View {
     /// a field can be typed straight back into it. Defaults so existing call
     /// sites/tests that don't care about the block editor still compile.
     var format: MeasureFormat = MeasureFormat()
+    var embedded = false
 
     @State private var showingColorPicker = false
     /// Drives the theme-aware color swatch — `.foreground` (ACI 7) must read
@@ -216,13 +217,13 @@ struct PropertiesPanel: View {
                 Spacer()
                 Text(selectionCount == 1 ? "1 object" : "\(selectionCount) objects")
                     .font(.caption).foregroundColor(.secondary)
-                Button {
+                if !embedded { Button {
                     propertiesMinimized = true
                 } label: {
                     Image(systemName: "rectangle.rightthird.inset.filled")
                 }
                 .buttonStyle(.plain)
-                .help("Minimize properties")
+                .help("Minimize properties") }
                 Button {
                     selection = []
                 } label: { Image(systemName: "xmark.circle.fill") }
@@ -315,7 +316,7 @@ struct PropertiesPanel: View {
             }
             Spacer(minLength: 0)
         }
-        .frame(width: 250)
+        .frame(width: embedded ? 300 : 250)
         .background(Color(nsColor: .windowBackgroundColor))
         .overlay(Rectangle().frame(width: 1).foregroundColor(.black.opacity(0.2)),
                  alignment: .leading)
@@ -642,6 +643,7 @@ struct MarkupPropertiesPanel: View {
     let onStartMove: () -> Void
     let onStartModify: (ModifyCommand) -> Void
     let onDeleteSelectedMarkup: () -> Void
+    var panelWidth: CGFloat = 250
 
     private var regen: RegenCoordinator? { session.regen }
 
@@ -830,7 +832,7 @@ struct MarkupPropertiesPanel: View {
             }
             Spacer(minLength: 0)
         }
-        .frame(width: 250)
+        .frame(width: panelWidth)
         .background(Color(nsColor: .windowBackgroundColor))
         .overlay(Rectangle().frame(width: 1).foregroundColor(.black.opacity(0.2)),
                  alignment: .leading)

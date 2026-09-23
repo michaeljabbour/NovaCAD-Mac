@@ -6,7 +6,7 @@
 
 **Native macOS DWG/DXF viewer, markup, and data tooling for technical drawings and plant layouts.**
 
-Fast, dependency-free, and written from scratch in Swift.
+Written in Swift, with no third-party Swift package dependencies.
 
 [![macOS 15+](https://img.shields.io/badge/macOS-15%2B-blue.svg)](#requirements)
 [![Swift 6](https://img.shields.io/badge/Swift-6.0-F05138.svg)](#requirements)
@@ -14,19 +14,19 @@ Fast, dependency-free, and written from scratch in Swift.
 [![Dependencies: none](https://img.shields.io/badge/dependencies-none-brightgreen.svg)](#requirements)
 [![Tests: 1,200+](https://img.shields.io/badge/tests-1%2C200%2B%20passing-success.svg)](#building--testing)
 
-<img src="Assets/Marketing/novacad-precision-workspace.png" width="100%" alt="NovaCAD running on macOS">
+<img src="Assets/Marketing/novacad-precision-workspace.png" width="100%" alt="NovaCAD workspace illustration">
 
 </div>
 
-NovaCAD opens DWG/DXF drawings natively on a Mac and renders them smoothly at
-any zoom — including multi-hundred-megabyte plant layouts with millions of
-entities. On top of the viewer it adds the tools you actually use during a
-review: measurement, markup and drawing tools, block/attribute editing, CSV
+NovaCAD reads DXF natively and opens DWG through a local converter. It supports
+large plant layouts with millions of entities. Drawing-review tools include
+measurement, markup, block/attribute editing, CSV
 data extraction, xref handling, aisle/travel-distance analysis, and an
 optional AI Assistant that can call those tools on your drawing.
 
-No Electron. No third-party dependencies. One Swift package, `CADCore` +
-the app, with the full test suite in the open.
+One Swift package contains `CADCore` and the native macOS app, with the test
+suite in the repository. DWG conversion and optional AI backends have the
+external requirements described below.
 
 ## Screenshots
 
@@ -53,7 +53,9 @@ groups collapse into menus when the window narrows. Tabs and collapse state
 are remembered.
 Save, Undo, Redo, Find, and the File menu share the title bar with the drawing
 name; there is no separate app-title row.
-Advanced commands remain under **Home → All tools** and the native menus.
+Advanced commands remain under **Draw → All tools** and the native menus.
+Ribbon tooltips include command aliases such as **L**, **PL**, and **REC**;
+the same strings are exposed as accessibility help.
 
 Individual DWGs now use the same persistent conversion cache as drawing
 packages. Reopening an unchanged drawing skips ODA entirely. Fresh conversions
@@ -94,7 +96,7 @@ to DXF once via an external converter and caches the result.
 ```sh
 git clone https://github.com/michaeljabbour/NovaCAD-Mac.git
 cd NovaCAD-Mac
-swift run -c release NovaCAD      # tip: release builds parse large drawings ~10x faster
+swift run -c release NovaCAD      # release builds are recommended for large drawings
 ```
 
 Then open a drawing with **File ▸ Open** (⌘O) or drag a `.dxf`, `.dwg`,
@@ -127,24 +129,28 @@ still requires the separate [converter setup](#dwg-files); DXF opens directly.
 Self-contained drawings open without scanning their parent folder. NovaCAD
 indexes sibling drawings only when it needs to resolve external references.
 
-Prebuilt installers are attached to
-[Releases](https://github.com/ryandirezze/NovaCAD-Mac/releases/latest). The
-app and package are ad-hoc signed (no paid Apple Developer ID), so on first
-install and first launch macOS shows an "unidentified developer" prompt —
+This repository is the `michaeljabbour/NovaCAD-Mac` fork. Build from this
+checkout to get its workspace changes; upstream installers do not contain
+changes that have not been merged and released upstream. See
+[CHANGELOG.md](CHANGELOG.md) for the fork's 1.6.1 changes.
+
+Upstream prebuilt installers are attached to
+[upstream releases](https://github.com/ryandirezze/NovaCAD-Mac/releases/latest).
+The build scripts ad-hoc sign the app and create an unsigned installer;
+neither artifact is Developer ID signed or notarized. macOS may show an
+"unidentified developer" prompt on first install or launch —
 resolve it via **System Settings → Privacy & Security → Open Anyway**, or
 right-click → Open. The packaged build is Apple Silicon only.
 
-### Homebrew
+### Upstream Homebrew distribution
 
 ```sh
 brew install --cask ryandirezze/tap/novacad
 ```
 
-Homebrew auto-taps [`ryandirezze/tap`](https://github.com/ryandirezze/homebrew-tap),
-auto-trusts only this cask, and installs only this app. The cask is bumped
-automatically with each release. It lives in this personal tap rather than
-Homebrew's official repository because official casks must be Apple-notarized,
-which requires a paid Developer ID.
+The [`ryandirezze/tap`](https://github.com/ryandirezze/homebrew-tap) cask
+installs the upstream release, not this fork's build. Use the source build
+instructions above for the changes documented here.
 
 ## Features
 
@@ -153,7 +159,7 @@ which requires a paid Developer ID.
 - **File** is available in the macOS menu bar and inside the window: New Tab,
   Open/Open Recent, Save/Save As, Reload, PDF export, markup export, and recovery.
 - Drawings remember their last sheet, zoom, and layer visibility by original
-  layer name. **Views → Save View Preset** stores named views for that drawing.
+  layer name. **View → Saved views → Save View Preset** stores named views for that drawing.
 - **Only layers on this sheet/model** filters the sidebar to the current space.
   Right-click a layer and choose **Zoom to Layer** to find its geometry.
 - Changed documents get a background recovery copy after three idle seconds,
@@ -173,9 +179,9 @@ which requires a paid Developer ID.
 - **Search (⌘F)**: Spotlight-style search over every text string, label,
   attribute, and block name — including resolved xref content — with
   pan/zoom animation to each hit.
-- Quality control (1–5) balances detail vs. redraw speed on dense drawings;
-  robust "fit" so stray far-away content can't shrink the real drawing to a
-  dot.
+- Quality control (1–5) balances detail vs. redraw speed on dense drawings.
+  Initial fitting uses robust extents; **Fit Drawing (⌘0)** includes all
+  rendered content, including text and title blocks, on its first click.
 - Multi-document tabs and trackpad gestures (pan, pinch-zoom, Option+scroll).
 
 ### Layers, xrefs & properties
@@ -215,7 +221,7 @@ which requires a paid Developer ID.
   in a pickable color so proposed changes read clearly against the original
   drawing.
 - **Command palette** at the bottom: type `L`, `PL`, `C`, `A`, `REC`, `POL`,
-  `T`, `E`, `DI`, `AREA`, `TR`, `EX`, `F`, `O`, `AR`, `X`, `J`, `Z`, `U`, …,
+  `T`, `E`, `DI`, `AA`, `TR`, `EX`, `F`, `O`, `AR`, `X`, `J`, `Z`, `U`, …,
   with interactive "Select objects:" prompts (`W`/`C`/`F`, `ALL`, `P`, `L`).
 - Block tools: insert blocks (true INSERT entities), stamp an existing block
   by picking it, and edit block attributes in a dedicated editor
@@ -228,6 +234,8 @@ which requires a paid Developer ID.
   layer visibility. Choose drawing paper sizes or A4/A3/Letter/Tabloid/ARCH D,
   drawing page setup, 1:1/1:50/1:100, or explicit Fit to page. Actual scales may
   crop out-of-page content; export reports this. CTB/STB styles are not applied.
+  The export selector retains all stored layouts, including empty layouts
+  omitted from on-screen sheet navigation.
 
 
 - **Save (⌘S) / Save As (⇧⌘S)** write the full live document — every
@@ -247,7 +255,8 @@ which requires a paid Developer ID.
 
 ### AI Assistant (optional)
 
-A floating chat panel that can answer questions about the open drawing and,
+The **AI Assistant** tab in the shared **Properties & AI** sidebar can answer
+questions about the open drawing and,
 on supported backends, call 18 built-in drawing tools (read entities,
 extract attributes, propose attribute edits, analyze/repair aisle networks,
 route travel distances, shade aisle/dock areas, export CSVs, and more).
@@ -294,10 +303,20 @@ paper sheet. This selects paper space and the editable renderer automatically.
 
 ### Workspace navigation and rendering
 
-Search lives above the canvas and automatically centers and outlines its first
-match. Previous/Next and the results menu navigate other matches. Units, Quality,
-Drawing Info, and Issues open as panels contained within the workspace. The AI
-Assistant docks beside the canvas by default; floating remains optional.
+Search lives above the canvas and frames each match at 28% of the available view,
+with its surroundings visible. Closing search restores the prior view. Each sheet
+and Model space remembers its own zoom and center. Empty layouts (including layouts
+with only the default paper viewport) stay in the file but are omitted from sheet
+counts and Previous/Next navigation.
+
+Units, Quality, Drawing Info, and Issues open beside their buttons inside the
+workspace, above the status bar. Properties and AI Assistant share a single
+sidebar with two tabs; the last selected tab is remembered. A fitted drawing
+re-fits when panels open or close; manual zoom and pan remain unchanged. Layer
+visibility, lock and color controls, Clear Selection, sheet/search arrows and
+workspace inspector/search/sidebar close buttons use 28-point targets.
+The ribbon toggle has a 30-point target,
+and layer rows expose a default accessibility selection action.
 
 MTEXT respects its reference width, and Fit Drawing includes full rotated text
 bounds. Paper-only files with empty Model space no longer show unused block
@@ -373,7 +392,7 @@ Sources/
 │   ├── Editing/                # trim, fillet, offset, array, stretch, …
 │   ├── Commands/               # command registry + headless harness
 │   └── AI/                     # optional AI Assistant backends + tools
-Tests/DWGViewerTests/      # 1,200+ tests, 18 synthetic DXF fixtures
+Tests/DWGViewerTests/      # XCTest suite; synthetic drawings live in Tests/Fixtures
 Scripts/                   # build_app.sh, build_pkg.sh, icon generator
 ```
 

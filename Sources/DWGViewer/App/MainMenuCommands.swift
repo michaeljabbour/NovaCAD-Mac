@@ -96,7 +96,6 @@ struct MainMenuCommands: Commands {
         }
         CommandMenu("Modify") { menuItems(for: .modify) }
         CommandMenu("Format") {
-            Button("Layers Sidebar") { dispatch?.toggleLayers() }
             menuItems(for: .format)
             Button("Units & Format…") { dispatch?.showUnits() }.disabled(!ready)
         }

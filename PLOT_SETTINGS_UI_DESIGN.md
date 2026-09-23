@@ -1,5 +1,9 @@
 # Technical Proposal & Interface Blueprint: Plot Settings UI Design
 
+> Proposal scope exceeds the current implementation. Sheet PDF export already
+> supports paper size and scale/fit settings. Native printer dialogs
+> and CTB/STB plot styles remain unimplemented. See [README.md](README.md#save--export).
+
 ## 1. Overview & Goals
 The goal of this design is to expose comprehensive Plot and Print Settings in the NovaCAD user interface. This enables users to configure drawings for high-fidelity physical plotting or digital export (PDF, raster formats). 
 

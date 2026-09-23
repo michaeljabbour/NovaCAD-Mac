@@ -134,13 +134,11 @@ struct WelcomeView: View {
 /// changelog; older entries should be trimmed as they stop being "new."
 enum WhatsNew {
     static let recentHighlights: [String] = [
-        "Find text and jump straight to a highlighted match, with search above the canvas.",
-        "Step through sheets beside the ribbon; current layer and markup color stay in one fixed strip.",
-        "Open readable units, quality, drawing info, and issue panels that stay inside the window.",
-        "Read wrapped drawing text and fit its full extent; paper-only files no longer stack unused tables in Model space.",
-        "Use standard Mac editing shortcuts, clearer layer selection, and a docked AI Assistant.",
-        "Reopen unchanged DWGs without launching the converter again."
-
+        "Keep the whole sheet fitted when opening side panels, with easier-to-click layer and close buttons.",
+        "Return to the same zoom and position on each sheet, and after closing search.",
+        "Find matches with their surroundings visible and skip empty sheets in navigation.",
+        "Switch between Properties and AI Assistant in one sidebar that remembers your tab.",
+        "Open inspectors beside their buttons, with larger click targets and accessible layer selection.",
     ]
 }
 
