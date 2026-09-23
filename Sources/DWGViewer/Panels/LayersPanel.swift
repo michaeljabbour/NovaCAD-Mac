@@ -482,9 +482,10 @@ struct LayersPanel: View {
                 Spacer()
                 if !selectedLayerIds.isEmpty {
                     Button("Clear selection") { selectedLayerIds = [] }
-                        .buttonStyle(.plain).font(.caption)
+                        .buttonStyle(CompactControlButtonStyle()).font(.caption)
                 }
             }
+            .frame(minHeight: 28) // Selecting a layer must not shift the rows below the pointer.
             HStack(spacing: 6) {
                 Button("Show \(targets.count)") { visibility.hiddenLayerIds.subtract(targets) }
                     .disabled(targets.isEmpty)
@@ -518,10 +519,8 @@ struct LayersPanel: View {
             } label: {
                 Image(systemName: isOn ? "eye.fill" : "eye.slash")
                     .foregroundColor(isOn ? .accentColor : .secondary)
-                    .frame(width: 16)
-                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(CompactControlButtonStyle())
             .help(isOn ? "Hide layer (freeze)" : "Show layer (thaw)")
             .accessibilityLabel("\(isOn ? "Hide" : "Show") \(displayName(layer))")
 
@@ -531,10 +530,8 @@ struct LayersPanel: View {
             } label: {
                 Image(systemName: isLocked ? "lock.fill" : "lock.open")
                     .foregroundColor(isLocked ? .orange : .secondary.opacity(0.5))
-                    .frame(width: 14)
-                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(CompactControlButtonStyle())
             .help(isLocked ? "Unlock layer (allow selection)" : "Lock layer (prevent selection)")
             .accessibilityLabel("\(isLocked ? "Unlock" : "Lock") \(displayName(layer))")
 
@@ -557,7 +554,7 @@ struct LayersPanel: View {
                 .overlay(Circle()
                     .strokeBorder(Color.primary.opacity(0.2), lineWidth: 0.5))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(CompactControlButtonStyle())
             .accessibilityLabel("Color for \(displayName(layer))")
             .help(layer.transparency > 0
                   ? "\(Int(layer.transparency.rounded()))% transparent — click for Layer Settings"
@@ -589,6 +586,7 @@ struct LayersPanel: View {
         .accessibilityLabel(displayName(layer))
         .accessibilityValue(isRowSelected ? "Selected" : "Not selected")
         .accessibilityAddTraits(isRowSelected ? .isSelected : [])
+        .accessibilityAction { handleLayerClick(layer) }
         .accessibilityAction(named: "Select layer") { handleLayerClick(layer) }
         .simultaneousGesture(TapGesture(count: 1).onEnded { handleLayerClick(layer) })
         .simultaneousGesture(TapGesture(count: 2).onEnded {

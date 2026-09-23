@@ -37,6 +37,8 @@ final class AIToolExecutor {
     /// reused across an entire agentic turn — see `AISelectionReader`'s own
     /// doc comment for why a snapshot would silently go stale.
     private let selectionProvider: (() -> Set<EntityID>)?
+    private let spaceProvider: (() -> SpaceID)?
+    private var inspectedSheet: (id: UInt64, revision: UInt64, document: DXFDocument)?
 
     /// Throwing accessor used by every tool body, so a released document
     /// surfaces as a normal tool error rather than a crash.
@@ -56,10 +58,12 @@ final class AIToolExecutor {
     private(set) var stagedGeometry: [AIProposedGeometry] = []
 
     init(regen: RegenCoordinator, visibility: VisibilityState,
-         selectionProvider: (() -> Set<EntityID>)? = nil) {
+         selectionProvider: (() -> Set<EntityID>)? = nil,
+         spaceProvider: (() -> SpaceID)? = nil) {
         self.regenRef = regen
         self.visibility = visibility
         self.selectionProvider = selectionProvider
+        self.spaceProvider = spaceProvider
     }
 
     /// Clears both staged lists — called once their contents have been
@@ -80,16 +84,31 @@ final class AIToolExecutor {
     /// converts that into an error `tool_result` and continues, matching
     /// the LLM client's own resilience).
     func execute(tool name: String, arguments: [String: Any]) throws -> String {
+        try AIContextBudget.checkedToolResult(dispatch(tool: name, arguments: arguments))
+    }
+
+    private func requestedSpace(_ arguments: [String: Any]) throws -> SpaceID {
+        switch (arguments["space"] as? String)?.lowercased() {
+        case "paper": return .paper
+        case "model": return .model
+        case nil, "active": return spaceProvider?() ?? .model
+        default: throw AIToolError.invalidArgument("space must be model, paper, or active")
+        }
+    }
+
+    private func dispatch(tool name: String, arguments: [String: Any]) throws -> String {
         switch name {
         case "read_drawing":
-            let space = (arguments["space"] as? String)?.lowercased() == "paper" ? SpaceID.paper : .model
+            let space = try requestedSpace(arguments)
             return try readDrawing(space: space)
         case "list_inserts_on_layer":
             guard let layerName = arguments["layerName"] as? String else {
                 throw AIToolError.missingArgument("layerName")
             }
-            let space = (arguments["space"] as? String)?.lowercased() == "paper" ? SpaceID.paper : .model
-            return try listInserts(onLayer: layerName, space: space)
+            let space = try requestedSpace(arguments)
+            return try listInserts(onLayer: layerName, space: space,
+                offset: max(0, intArgument(arguments["offset"]) ?? 0),
+                limit: max(1, min(intArgument(arguments["limit"]) ?? 30, 100)))
         case "export_csv":
             guard let dataset = arguments["datasetJSON"] as? String else {
                 throw AIToolError.missingArgument("datasetJSON")
@@ -104,7 +123,7 @@ final class AIToolExecutor {
             guard let x = doubleArgument(arguments["x"]), let y = doubleArgument(arguments["y"]) else {
                 throw AIToolError.missingArgument("x/y")
             }
-            let space = (arguments["space"] as? String)?.lowercased() == "paper" ? SpaceID.paper : .model
+            let space = try requestedSpace(arguments)
             return try findInsertAtPoint(CGPoint(x: x, y: y), space: space)
         case "propose_attribute_edits":
             guard let rawEdits = arguments["edits"] as? [String] else {
@@ -122,7 +141,7 @@ final class AIToolExecutor {
             guard let value = arguments["value"] as? String else {
                 throw AIToolError.missingArgument("value")
             }
-            let space = (arguments["space"] as? String)?.lowercased() == "paper" ? SpaceID.paper : .model
+            let space = try requestedSpace(arguments)
             return try bulkSetAttributeOnLayer(layerName: layerName, space: space, tag: tag, value: value)
 
         // ---- Aisle network / dock apron tool catalog ----
@@ -130,14 +149,14 @@ final class AIToolExecutor {
             guard let layerName = arguments["layerName"] as? String else {
                 throw AIToolError.missingArgument("layerName")
             }
-            let space = (arguments["space"] as? String)?.lowercased() == "paper" ? SpaceID.paper : .model
+            let space = try requestedSpace(arguments)
             return try analyzeAisleNetwork(layerName: layerName, space: space)
 
         case "repair_aisle_network":
             guard let layerName = arguments["layerName"] as? String else {
                 throw AIToolError.missingArgument("layerName")
             }
-            let space = (arguments["space"] as? String)?.lowercased() == "paper" ? SpaceID.paper : .model
+            let space = try requestedSpace(arguments)
             let threshold = doubleArgument(arguments["maxGapDistanceFeet"]) ?? 10
             let targetLayer = arguments["targetLayerName"] as? String
             return try repairAisleNetwork(layerName: layerName, targetLayerName: targetLayer,
@@ -147,14 +166,14 @@ final class AIToolExecutor {
             guard let query = arguments["query"] as? String else {
                 throw AIToolError.missingArgument("query")
             }
-            let space = (arguments["space"] as? String)?.lowercased() == "paper" ? SpaceID.paper : .model
+            let space = try requestedSpace(arguments)
             return try findRouteEndpoints(query: query, space: space)
 
         case "route_along_aisles":
             guard let layerName = arguments["aisleLayerName"] as? String else {
                 throw AIToolError.missingArgument("aisleLayerName")
             }
-            let space = (arguments["space"] as? String)?.lowercased() == "paper" ? SpaceID.paper : .model
+            let space = try requestedSpace(arguments)
             let mode = Self.centerlineMode(arguments["centerlineMode"])
             let repairFeet = doubleArgument(arguments["autoRepairFeet"]) ?? TravelNetwork.defaultAutoRepairFeet
             let anchor = TravelNetwork.Anchor.parse(arguments["anchor"] as? String) ?? .nearestEdge
@@ -198,7 +217,7 @@ final class AIToolExecutor {
             guard let aisleLayer = arguments["aisleLayerName"] as? String else {
                 throw AIToolError.missingArgument("aisleLayerName")
             }
-            let space = (arguments["space"] as? String)?.lowercased() == "paper" ? SpaceID.paper : .model
+            let space = try requestedSpace(arguments)
             return try exportTravelDistances(
                 destinationLayerName: destinationLayer, aisleLayerName: aisleLayer,
                 connectorLayerName: arguments["connectorLayerName"] as? String,
@@ -216,14 +235,14 @@ final class AIToolExecutor {
                 filename: arguments["filename"] as? String)
 
         case "get_selected_objects":
-            let space = (arguments["space"] as? String)?.lowercased() == "paper" ? SpaceID.paper : .model
+            let space = try requestedSpace(arguments)
             return try selectedObjects(space: space)
 
         case "draw_polylines":
             guard let pathsJSON = arguments["pathsJSON"] as? String else {
                 throw AIToolError.missingArgument("pathsJSON")
             }
-            let space = (arguments["space"] as? String)?.lowercased() == "paper" ? SpaceID.paper : .model
+            let space = try requestedSpace(arguments)
             let aci = Int16(intArgument(arguments["colorIndex"]) ?? 256)
             return try drawPolylines(pathsJSON: pathsJSON,
                                      layerName: arguments["layerName"] as? String,
@@ -233,7 +252,7 @@ final class AIToolExecutor {
                                      aci: aci)
 
         case "query_entities":
-            let space = (arguments["space"] as? String)?.lowercased() == "paper" ? SpaceID.paper : .model
+            let space = try requestedSpace(arguments)
             var types: [String]?
             if let list = arguments["types"] as? [String] { types = list }
             else if let single = arguments["types"] as? String {
@@ -241,8 +260,9 @@ final class AIToolExecutor {
                     $0.trimmingCharacters(in: .whitespaces)
                 }.filter { !$0.isEmpty }
             }
-            let limit = max(1, min(intArgument(arguments["limit"]) ?? 200, 2000))
+            let limit = max(1, min(intArgument(arguments["limit"]) ?? 30, 100))
             return try queryEntities(types: types,
+                                     sheetName: arguments["sheetName"] as? String,
                                      layerContains: arguments["layerContains"] as? String,
                                      nameContains: arguments["nameContains"] as? String,
                                      textContains: arguments["textContains"] as? String,
@@ -260,12 +280,12 @@ final class AIToolExecutor {
             guard let layerName = arguments["layerName"] as? String else {
                 throw AIToolError.missingArgument("layerName")
             }
-            let space = (arguments["space"] as? String)?.lowercased() == "paper" ? SpaceID.paper : .model
+            let space = try requestedSpace(arguments)
             let fallbackWidthFeet = doubleArgument(arguments["fallbackWidthFeet"]) ?? 13.34
             return try shadeAisleNetwork(layerName: layerName, space: space, fallbackWidthFeet: fallbackWidthFeet)
 
         case "shade_dock_aprons":
-            let space = (arguments["space"] as? String)?.lowercased() == "paper" ? SpaceID.paper : .model
+            let space = try requestedSpace(arguments)
             let depthFeet = doubleArgument(arguments["depthFeet"]) ?? 40
             let endPaddingFeet = doubleArgument(arguments["endPaddingFeet"]) ?? 0
             let aisleLayerName = arguments["depthSuggestionAisleLayerName"] as? String
@@ -279,23 +299,71 @@ final class AIToolExecutor {
 
     // MARK: - Read tools
 
-    private func readDrawing(space: SpaceID) throws -> String {
+    /// Current render model contains only the selected paper sheet. Enumerate
+    /// other sheets by name; never infer that an empty model means an empty file.
+    func workspaceContext() throws -> String {
         let regen = try liveRegen()
-        let summary = DrawingReader.summarize(document: regen.document, space: space, visibility: visibility)
-        return Self.jsonString(summary) ?? "{\"error\":\"failed to encode drawing summary\"}"
+        let sheets = regen.navigationPaperLayouts
+        let selected = sheets.first { $0.id == regen.parsed.activePaperLayoutID }?.name
+        let context: [String: Any] = [
+            "activeSpace": (spaceProvider?() ?? .model) == .paper ? "paper" : "model",
+            "activeSheet": AIContextBudget.clipped(selected ?? "Unnamed paper space", bytes: 160),
+            "coordinateUnits": regen.document.unitsLabel,
+            "modelPrimitiveCount": regen.document.modelGroups.reduce(0) { $0 + $1.entityCount },
+            "paperSheetCount": sheets.count,
+            "paperSheets": sheets.prefix(40).map { AIContextBudget.clipped($0.name, bytes: 96) },
+            "sheetListTruncated": sheets.count > 40,
+            "measurementNote": "Paper coordinates can be scaled. Confirm drawing scale and endpoints before reporting real-world distances."
+        ]
+        let data = try JSONSerialization.data(withJSONObject: context, options: [.sortedKeys])
+        return String(decoding: data, as: UTF8.self)
     }
 
-    private func listInserts(onLayer layerName: String, space: SpaceID) throws -> String {
+    private func readDrawing(space: SpaceID) throws -> String {
+        let regen = try liveRegen()
+        let groups = space == .paper ? regen.document.paperGroups : regen.document.modelGroups
+        let visible = groups.filter { !visibility.hiddenLayerIds.contains($0.layerId) }
+        let layerIDs = Set(visible.map(\.layerId)).sorted()
+        let layers = layerIDs.prefix(20).map { id -> [String: Any] in
+            ["name": AIContextBudget.clipped(regen.document.layers[id].name, bytes: 160),
+             "primitiveCount": visible.filter { $0.layerId == id }.reduce(0) { $0 + $1.entityCount }]
+        }
+        // Searchable labels and inserts are more useful than thousands of line
+        // endpoints. Details stay paged through query_entities.
+        let sample = try queryEntities(types: nil, sheetName: nil, layerContains: nil,
+            nameContains: nil, textContains: nil, space: space, offset: 0, limit: 5, countOnly: false)
+        let result: [String: Any] = [
+            "workspace": try JSONSerialization.jsonObject(with: Data(workspaceContext().utf8)),
+            "space": space == .paper ? "paper" : "model",
+            "visiblePrimitiveCount": visible.reduce(0) { $0 + $1.entityCount },
+            "layers": layers, "layersTruncated": layerIDs.count > 20,
+            "sample": try JSONSerialization.jsonObject(with: Data(sample.utf8)),
+            "guidance": "This is an overview, not a complete entity dump. Search room labels with query_entities(textContains:...), or block names/layers. Use sheetName to inspect another paper sheet without moving the canvas."
+        ]
+        return String(decoding: try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys]), as: UTF8.self)
+    }
+
+    private func listInserts(onLayer layerName: String, space: SpaceID, offset: Int, limit: Int) throws -> String {
         let matches = try inserts(onLayer: layerName, space: space)
-        let rows = matches.map { item in
+        var rows: [InsertRow] = []
+        var bytes = 0
+        for item in matches.dropFirst(offset).prefix(limit) {
             let ins = item.insert
             let bounds = item.bounds
-            return InsertRow(entityId: ins.entityId, blockName: ins.name, displayName: item.label,
-                             referenceX: Double(ins.position.x), referenceY: Double(ins.position.y),
-                             minX: Double(bounds.minX), minY: Double(bounds.minY),
-                             maxX: Double(bounds.maxX), maxY: Double(bounds.maxY))
+            let row = InsertRow(entityId: ins.entityId,
+                blockName: AIContextBudget.clipped(ins.name, bytes: 256),
+                displayName: AIContextBudget.clipped(item.label, bytes: 256),
+                referenceX: Double(ins.position.x), referenceY: Double(ins.position.y),
+                minX: Double(bounds.minX), minY: Double(bounds.minY),
+                maxX: Double(bounds.maxX), maxY: Double(bounds.maxY))
+            let size = try JSONEncoder().encode(row).count
+            guard bytes + size < 10_000 else { break }
+            bytes += size; rows.append(row)
         }
-        return Self.jsonString(InsertList(layer: layerName, count: rows.count, inserts: rows))
+        let next = offset + rows.count
+        return Self.jsonString(InsertList(layer: AIContextBudget.clipped(layerName, bytes: 160),
+            count: matches.count, offset: offset, returned: rows.count,
+            nextOffset: next < matches.count ? next : nil, inserts: rows))
             ?? "{\"error\":\"failed to encode inserts\"}"
     }
 
@@ -736,6 +804,9 @@ final class AIToolExecutor {
     private struct InsertList: Encodable {
         var layer: String
         var count: Int
+        var offset: Int
+        var returned: Int
+        var nextOffset: Int?
         var inserts: [InsertRow]
     }
 
@@ -1056,18 +1127,26 @@ final class AIToolExecutor {
 
     /// Filtered, paged entity search for drawings far too large to summarize.
     ///
-    /// `read_drawing` caps out at 4,000 entities and returns everything it
-    /// finds, which on a multi-hundred-megabyte plant layout is both useless
-    /// (the objects wanted are rarely in the first 4,000) and expensive (it
-    /// floods the model's context). This answers a targeted question instead
-    /// — "INSERTs on this layer whose name contains X, rows 500-1000" — so
-    /// the assistant can work through an arbitrarily large object list in
-    /// bounded chunks.
-    private func queryEntities(types: [String]?, layerContains: String?, nameContains: String?,
+    /// Counts the whole filtered set but sends only a bounded page, so large
+    /// drawings remain searchable without filling the provider context.
+    private func queryEntities(types: [String]?, sheetName: String?, layerContains: String?, nameContains: String?,
                                textContains: String?, space: SpaceID,
                                offset: Int, limit: Int, countOnly: Bool) throws -> String {
         let regen = try liveRegen()
-        let document = regen.document
+        var document = regen.document
+        if let sheetName {
+            guard space == .paper,
+                  let sheet = regen.parsed.paperLayouts.first(where: { $0.name.caseInsensitiveCompare(sheetName) == .orderedSame }) else {
+                throw AIToolError.invalidArgument("Use space: paper and an exact sheetName from read_drawing")
+            }
+            if sheet.id != regen.parsed.activePaperLayoutID {
+                if inspectedSheet?.id != sheet.id || inspectedSheet?.revision != regen.revision {
+                    inspectedSheet = (sheet.id, regen.revision,
+                        Regenerator.build(from: regen.parsed, parseSeconds: 0, paperLayoutID: sheet.id) { _ in })
+                }
+                document = inspectedSheet!.document
+            }
+        }
         let store = regen.parsed.store
         let groups = space == .paper ? document.paperGroups : document.modelGroups
 
@@ -1099,6 +1178,7 @@ final class AIToolExecutor {
             var layer: String
             var name: String?
             var text: String?
+            var textTruncated: Bool = false
             var x: Double
             var y: Double
             var minX: Double, minY: Double, maxX: Double, maxY: Double
@@ -1106,6 +1186,15 @@ final class AIToolExecutor {
 
         var matches: [Row] = []
         var totalMatched = 0
+        var rowBytes = 0
+        var pageFull = false
+        func append(_ row: Row) {
+            guard !pageFull else { return }
+            let bytes = (try? JSONEncoder().encode(row).count) ?? AIContextBudget.toolBytes
+            guard rowBytes + bytes < 10_000 else { pageFull = true; return }
+            rowBytes += bytes
+            matches.append(row)
+        }
 
         // ---- INSERTs (the common case for stations/marketplaces) ----
         if wantsInserts {
@@ -1132,8 +1221,8 @@ final class AIToolExecutor {
                 totalMatched += 1
                 guard !countOnly, totalMatched > offset, matches.count < limit else { continue }
                 let bounds = boundsByIndex[Int32(index)] ?? CGRect(origin: insert.position, size: .zero)
-                matches.append(Row(entityId: insert.entityId, type: "insert",
-                                   layer: layerName(Int(insert.layerId)), name: label, text: nil,
+                append(Row(entityId: insert.entityId, type: "insert",
+                                   layer: AIContextBudget.clipped(layerName(Int(insert.layerId)), bytes: 160), name: AIContextBudget.clipped(label, bytes: 256), text: nil,
                                    x: Double(insert.position.x), y: Double(insert.position.y),
                                    minX: Double(bounds.minX), minY: Double(bounds.minY),
                                    maxX: Double(bounds.maxX), maxY: Double(bounds.maxY)))
@@ -1144,7 +1233,10 @@ final class AIToolExecutor {
         if wantsText {
             for group in groups {
                 guard layerMatches(group.layerId) else { continue }
-                for item in group.texts {
+                for (index, item) in group.texts.enumerated() {
+                    if GroupTombstoneRegistry.tombstones(for: group)?.isDead(.text, Int32(index)) == true { continue }
+                    let kind = item.kind == .mtext ? "mtext" : item.kind == .attrib ? "attrib" : "text"
+                    guard wantedTypes.isEmpty || wantedTypes.contains(kind) || wantedTypes.contains("text") else { continue }
                     if let textNeedle {
                         guard item.text.lowercased().contains(textNeedle) else { continue }
                     } else if nameNeedle != nil {
@@ -1152,8 +1244,9 @@ final class AIToolExecutor {
                     }
                     totalMatched += 1
                     guard !countOnly, totalMatched > offset, matches.count < limit else { continue }
-                    matches.append(Row(entityId: item.entityId, type: "text",
-                                       layer: layerName(group.layerId), name: nil, text: item.text,
+                    append(Row(entityId: item.entityId, type: kind,
+                                       layer: AIContextBudget.clipped(layerName(group.layerId), bytes: 160), name: nil,
+                                       text: AIContextBudget.clipped(item.text, bytes: 768), textTruncated: item.text.utf8.count > 768,
                                        x: Double(item.position.x), y: Double(item.position.y),
                                        minX: Double(item.position.x), minY: Double(item.position.y),
                                        maxX: Double(item.position.x), maxY: Double(item.position.y)))
@@ -1162,6 +1255,8 @@ final class AIToolExecutor {
         }
 
         struct Result: Encodable {
+            var space: String
+            var sheetName: String?
             var totalMatched: Int
             var offset: Int
             var returned: Int
@@ -1170,8 +1265,10 @@ final class AIToolExecutor {
             var rows: [Row]
         }
         let hasMore = offset + matches.count < totalMatched
-        let result = Result(totalMatched: totalMatched, offset: offset, returned: matches.count,
-                            hasMore: hasMore, nextOffset: hasMore ? offset + matches.count : nil,
+        let result = Result(space: space == .paper ? "paper" : "model",
+                            sheetName: space == .paper ? (sheetName ?? regen.parsed.paperLayouts.first { $0.id == regen.parsed.activePaperLayoutID }?.name) : nil,
+                            totalMatched: totalMatched, offset: offset, returned: matches.count,
+                            hasMore: hasMore, nextOffset: hasMore && !countOnly ? offset + matches.count : nil,
                             rows: countOnly ? [] : matches)
         return Self.jsonString(result) ?? "{\"error\":\"failed to encode query result\"}"
     }

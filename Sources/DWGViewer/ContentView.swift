@@ -37,25 +37,13 @@ struct ContentView: View {
 
     @State private var darkBackground = true
     @State private var sidebarVisibility: NavigationSplitViewVisibility = .all
+    @State private var inspectorFooterHeight: CGFloat = 64
 
     @State private var isImporterPresented = false
     @State private var layerSearch = ""
     @State private var inspector: WorkspaceInspector?
-    /// AI Assistant panel visibility — a plain per-view `@State` (not
-    /// `DocumentSession`) since it's pure UI chrome (like
-    /// `propertiesMinimized`), not conversation state that needs to survive
-    /// a `.id(activeTab.id)` view-identity change on tab switch (that
-    /// survives via `session.aiAssistant` instead — see `DocumentSession`'s
-    /// own doc comment on that field).
-    @State private var showAIAssistant = false
-    /// Docked by default so the drawing stays visible beside the conversation.
-    @State private var aiAssistantFloating = false
-    /// Where the floating panel currently sits/how big it is. Held here (not
-    /// inside `FloatingAIAssistantPanel`) so a float -> dock -> float round
-    /// trip returns the panel to where the user last put it rather than
-    /// snapping back to the default corner. `nil` until the container size is
-    /// known, at which point `FloatingPanelFrame.defaultFrame` seeds it.
-    @State private var aiAssistantFrame: FloatingPanelFrame?
+    @State private var sidePanelVisible = false
+    @AppStorage("workspaceSidePanelTab") private var sidePanelTab = "Properties"
 
     @State private var propertiesMinimized = false
 
@@ -426,57 +414,21 @@ struct ContentView: View {
                 if searchVisible && document != nil { searchBar }
                 HStack(spacing: 0) {
                     drawingArea
-                    if !selectedMarkupIDs.isEmpty {
-                        MarkupPropertiesPanel(
-                            session: session,
-                            document: document,
-                            selectedMarkupIDs: selectedMarkupIDs,
-                            currentFormat: currentFormat,
-                            markupPalette: Self.markupPalette,
-                            markupColor: Binding(get: { markupColor }, set: { markupColor = $0 }),
-                            selection: $session.selection,
-                            onStartMove: startMove,
-                            onStartModify: startModify,
-                            onDeleteSelectedMarkup: deleteSelectedMarkup
-                        )
-                    } else if !selection.isEmpty {
-                        if propertiesMinimized {
-                            MinimizedPropertiesTab(selectionCount: selection.count,
-                                                   propertiesMinimized: $propertiesMinimized)
-                        } else {
-                            PropertiesPanel(session: session,
-                                            document: document,
-                                            selectionCount: selection.count,
-                                            mergedProperties: mergedProperties,
-                                            propertiesMinimized: $propertiesMinimized,
-                                            selection: $session.selection,
-                                            format: currentFormat)
-                        }
-                    }
-                    // Only the DOCKED presentation participates in this
-                    // layout row; the floating one is an overlay over
-                    // `drawingArea` (see its `.overlay` below) so it hovers
-                    // over the canvas instead of narrowing it.
-                    if showAIAssistant && !aiAssistantFloating {
-                        AIAssistantPanel(
-                            aiSession: session.aiAssistant,
-                            regen: regen,
-                            visibility: visibility,
-                            selectionProvider: { [weak session] in session?.selection ?? [] },
-                            onApplyEdits: applyAIProposedEdits,
-                            onApplyGeometry: applyAIProposedGeometry,
-                            onClose: { showAIAssistant = false },
-                            presentation: .docked,
-                            onTogglePresentation: { withAnimation(.easeOut(duration: 0.18)) { aiAssistantFloating = true } }
-                        )
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
-                    }
+                    if sidePanelVisible { workspaceSidePanel }
                 }
-                StatusBarView(settings: settings, document: document, isLoading: isLoading,
-                              recoveryStatus: session.workspaceError ?? session.recoveryStatus,
-                              issueCount: drawingIssues.count,
-                              onShowIssues: { inspector = .issues }, onShowQuality: { inspector = .quality })
-                if document != nil { commandBar }
+                VStack(spacing: 0) {
+                    StatusBarView(settings: settings, document: document, isLoading: isLoading,
+                                  recoveryStatus: session.workspaceError ?? session.recoveryStatus,
+                                  issueCount: drawingIssues.count,
+                                  onShowIssues: { inspector = .issues }, onShowQuality: { inspector = .quality })
+                    if document != nil { commandBar }
+                }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { inspectorFooterHeight = $0 }
+            }
+            // NavigationSplitView hosts its detail in a separate view tree.
+            // Resolve its button anchors here, before that hosting boundary.
+            .overlayPreferenceValue(WorkspaceAnchorPreference.self) { anchors in
+                inspectorOverlay(anchors, statusInspector: true)
             }
         }
         }
@@ -490,7 +442,12 @@ struct ContentView: View {
                 assistantToggle
             }
         }
-        .overlay(alignment: .bottomTrailing) { inspectorCard }
+        .overlayPreferenceValue(WorkspaceAnchorPreference.self) { anchors in
+            inspectorOverlay(anchors, statusInspector: false)
+        }
+        .onChange(of: selection) { _, ids in
+            if !ids.isEmpty && !searchVisible { sidePanelVisible = true }
+        }
         .frame(minWidth: 1000, minHeight: 650)
         .fileImporter(
             isPresented: $isImporterPresented,
@@ -669,7 +626,7 @@ struct ContentView: View {
             showUnits: { inspector = .units },
             toggleLayers: { sidebarVisibility = sidebarVisibility == .detailOnly ? .all : .detailOnly },
             showInfo: { inspector = .info }, showSearch: toggleSearch,
-            toggleAssistant: { showAIAssistant.toggle() },
+            toggleAssistant: openAssistant,
             zoomIn: { zoomAtCenter(by: 1.7) }, zoomOut: { zoomAtCenter(by: 0.59) }
         )
     }
@@ -749,7 +706,6 @@ struct ContentView: View {
     /// function so it can be passed as a closure across the view boundary.
     private func handleSpaceChanged() {
         selection = []; moveState = MoveState(); cancelModify(); cancelTrimExtend(); cancelFilletChamfer(); cancelOffset();
-        fitToView()
     }
 
     private var quickAccessControls: some View {
@@ -778,43 +734,52 @@ struct ContentView: View {
     }
 
     private var assistantToggle: some View {
-            Toggle(isOn: $showAIAssistant) {
-                Label("AI Assistant", systemImage: "sparkles")
-            }
-            .toggleStyle(.button)
-            .help("Show/hide the AI Assistant")
-            .disabled(document == nil)
-            // Right-click the toolbar button to switch presentation without
-            // first having to open the panel and find its header button —
-            // also how a user who somehow lost track of a floating panel can
-            // bring it back to a known place (docking re-anchors it).
-            .contextMenu {
-                Button {
-                    withAnimation(.easeOut(duration: 0.18)) { aiAssistantFloating = true }
-                    showAIAssistant = true
-                } label: {
-                    Label("Float Window", systemImage: "macwindow.on.rectangle")
-                }
-                .disabled(showAIAssistant && aiAssistantFloating)
-                Button {
-                    withAnimation(.easeOut(duration: 0.18)) { aiAssistantFloating = false }
-                    showAIAssistant = true
-                } label: {
-                    Label("Dock to Side", systemImage: "arrow.down.right.and.arrow.up.left.rectangle")
-                }
-                .disabled(showAIAssistant && !aiAssistantFloating)
-                Divider()
-                Button {
-                    // Recenters/resizes the floating panel to its default spot
-                    // — the recovery path if it ends up somewhere awkward.
-                    aiAssistantFrame = nil
-                    aiAssistantFloating = true
-                    showAIAssistant = true
-                } label: {
-                    Label("Reset Panel Position", systemImage: "arrow.counterclockwise")
-                }
-            }
+        Toggle(isOn: $sidePanelVisible) {
+            Label("Properties & AI", systemImage: "sidebar.right")
+        }
+        .toggleStyle(.button).help("Show or hide Properties and AI Assistant")
+        .accessibilityLabel("Properties and AI panel")
+        .disabled(document == nil)
+    }
 
+    private func openAssistant() { sidePanelTab = "AI Assistant"; sidePanelVisible = true }
+
+    private var workspaceSidePanel: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Picker("Inspector tab", selection: $sidePanelTab) {
+                    Text("Properties").tag("Properties")
+                    Text("AI Assistant").tag("AI Assistant")
+                }.pickerStyle(.segmented).labelsHidden()
+                Button { sidePanelVisible = false } label: {
+                    Image(systemName: "xmark")
+                }.buttonStyle(CompactControlButtonStyle()).accessibilityLabel("Close side panel")
+            }.padding(8)
+            Divider()
+            if sidePanelTab == "AI Assistant" {
+                AIAssistantPanel(aiSession: session.aiAssistant, regen: regen, visibility: visibility,
+                    selectionProvider: { [weak session] in session?.selection ?? [] },
+                    spaceProvider: { [weak session] in session?.space == .paper ? .paper : .model },
+                    onApplyEdits: applyAIProposedEdits, onApplyGeometry: applyAIProposedGeometry,
+                    onClose: { sidePanelVisible = false }, embedded: true)
+            } else if !selectedMarkupIDs.isEmpty {
+                MarkupPropertiesPanel(session: session, document: document, selectedMarkupIDs: selectedMarkupIDs,
+                    currentFormat: currentFormat, markupPalette: Self.markupPalette,
+                    markupColor: Binding(get: { markupColor }, set: { markupColor = $0 }),
+                    selection: $session.selection, onStartMove: startMove, onStartModify: startModify,
+                    onDeleteSelectedMarkup: deleteSelectedMarkup, panelWidth: 300)
+            } else if !selection.isEmpty {
+                PropertiesPanel(session: session, document: document, selectionCount: selection.count,
+                    mergedProperties: mergedProperties, propertiesMinimized: $propertiesMinimized,
+                    selection: $session.selection, format: currentFormat, embedded: true)
+            } else {
+                Text("Select an object to see its properties.")
+                    .foregroundStyle(.secondary).padding(20)
+                Spacer()
+            }
+        }.frame(width: 300)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .overlay(alignment: .leading) { Divider() }
     }
 
     private var allToolsMenu: some View {
@@ -1004,9 +969,9 @@ struct ContentView: View {
 
     private var workspaceStrip: some View {
         HStack(spacing: 12) {
-            SheetNavigationView(space: Binding(get: { space }, set: { space = $0 }),
-                sheets: regen?.parsed.paperLayouts ?? [], activeID: regen?.parsed.activePaperLayoutID,
-                onSpaceChanged: handleSpaceChanged, onSelect: selectPaperSheet)
+            SheetNavigationView(space: Binding(get: { space }, set: changeSpace),
+                sheets: regen?.navigationPaperLayouts ?? [], activeID: regen?.parsed.activePaperLayoutID,
+                onSelect: selectPaperSheet)
             Spacer(minLength: 0)
             Picker("Current layer", selection: $session.currentProperties.layerName) {
                 if let doc = document {
@@ -1022,12 +987,20 @@ struct ContentView: View {
         .background(Color(nsColor: .controlBackgroundColor))
     }
 
-    private func selectPaperSheet(_ id: UInt64) {
-        regen?.selectPaperLayout(id)
-        session.objectWillChange.send()
+    private func changeSpace(_ target: SpaceSelection) {
+        if searchVisible { closeSearch() }
+        animationTimer?.invalidate()
+        session.switchSpace(to: target)
         handleSpaceChanged()
         session.persistWorkspace()
-        if searchVisible { runSearch() }
+    }
+
+    private func selectPaperSheet(_ id: UInt64) {
+        if searchVisible { closeSearch() }
+        animationTimer?.invalidate()
+        session.switchSpace(to: .paper, sheetID: id)
+        handleSpaceChanged()
+        session.persistWorkspace()
     }
 
     @ViewBuilder
@@ -1036,7 +1009,7 @@ struct ContentView: View {
         case .home:
             RibbonGroup(title: "Workspace") {
                 VStack(alignment: .leading, spacing: 3) {
-                    Button { showAIAssistant.toggle() } label: { Label("AI Assistant", systemImage: "sparkles") }
+                    Button { sidePanelVisible.toggle() } label: { Label("Properties & AI", systemImage: "sidebar.right") }
                     Button(action: toggleSearch) { Label("Find in drawing", systemImage: "magnifyingglass") }
                 }.buttonStyle(RibbonButtonStyle()).disabled(document == nil || isLoading)
             }
@@ -1046,7 +1019,7 @@ struct ContentView: View {
         case .view:
             RibbonGroup(title: "Zoom") {
                 VStack(alignment: .leading, spacing: 3) {
-                    Button(action: fitButtonPressed) { Label("Fit drawing", systemImage: "arrow.up.left.and.arrow.down.right") }
+                    Button(action: fitButtonPressed) { Label("Fit drawing", systemImage: "arrow.up.left.and.arrow.down.right") }.help("Fit drawing (Z, ⌘0)")
                     HStack(spacing: 0) {
                         Button { zoomAtCenter(by: 1.7) } label: { Label("In", systemImage: "plus.magnifyingglass") }
                         Button { zoomAtCenter(by: 0.59) } label: { Label("Out", systemImage: "minus.magnifyingglass") }
@@ -1063,6 +1036,7 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     unitsButton
                     Button { inspector = .info } label: { Label("Drawing info", systemImage: "info.circle") }
+                        .workspaceAnchor(.button(.info))
                 }.buttonStyle(RibbonButtonStyle()).disabled(document == nil || isLoading)
             }
         }
@@ -1070,11 +1044,25 @@ struct ContentView: View {
 
     private var unitsButton: some View {
         Button { inspector = .units } label: { Label("Units & format", systemImage: "ruler.fill") }
+            .workspaceAnchor(.button(.units))
             .buttonStyle(RibbonButtonStyle()).disabled(document == nil || isLoading)
     }
 
     private var unitNotice: String? { document.flatMap { DrawingDiagnostics.unitNotice(in: $0) } }
     private var drawingIssues: [String] { (document?.renderingWarnings ?? []) + [unitNotice].compactMap { $0 } }
+
+    private func inspectorOverlay(_ anchors: [WorkspaceAnchor: Anchor<CGRect>], statusInspector: Bool) -> some View {
+        GeometryReader { proxy in
+            if let inspector, (inspector == .issues || inspector == .quality) == statusInspector {
+                let origin = anchors[.button(inspector)].map { proxy[$0] }
+                    ?? CGRect(x: proxy.size.width - 398, y: 0, width: 0, height: 0)
+                AnchoredInspector(anchor: origin, container: proxy.size,
+                    statusBar: anchors[.statusBar].map { proxy[$0] }
+                        ?? CGRect(x: 0, y: proxy.size.height - inspectorFooterHeight,
+                                  width: proxy.size.width, height: inspectorFooterHeight)) { inspectorCard }
+            }
+        }
+    }
 
     @ViewBuilder private var inspectorCard: some View {
         if let inspector {
@@ -1335,9 +1323,9 @@ struct ContentView: View {
                    doc.modelGroups.isEmpty, doc.modelImages.isEmpty {
                     VStack(spacing: 10) {
                         Text("Model space is empty").font(.headline)
-                        if let layouts = regen?.parsed.paperLayouts, !layouts.isEmpty {
+                        if let layouts = regen?.navigationPaperLayouts, !layouts.isEmpty {
                             Text("This drawing contains \(layouts.count) paper sheets.").foregroundStyle(.secondary)
-                            Button("Show Paper Sheets") { space = .paper; handleSpaceChanged() }
+                            Button("Show Paper Sheets") { changeSpace(.paper) }
                         }
                     }.padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
                 }
@@ -1381,45 +1369,18 @@ struct ContentView: View {
                     .padding(20).background(.regularMaterial).cornerRadius(12)
                 }
             }
-            // The FLOATING AI Assistant hovers over the canvas (rather than
-            // narrowing it, as the docked presentation does). Anchored
-            // `.topLeading` so `FloatingPanelFrame`'s origin is a plain
-            // top-left offset in this container's coordinate space, which is
-            // exactly what its clamping math assumes.
-            .overlay(alignment: .topLeading) {
-                if showAIAssistant && aiAssistantFloating {
-                    FloatingAIAssistantPanel(
-                        aiSession: session.aiAssistant,
-                        regen: regen,
-                        visibility: visibility,
-                        selectionProvider: { [weak session = session] in session?.selection ?? [] },
-                        onApplyEdits: applyAIProposedEdits,
-                        onApplyGeometry: applyAIProposedGeometry,
-                        onClose: { showAIAssistant = false },
-                        onDock: { withAnimation(.easeOut(duration: 0.18)) { aiAssistantFloating = false } },
-                        containerSize: proxy.size,
-                        frame: Binding(
-                            get: { aiAssistantFrame ?? FloatingPanelFrame.defaultFrame(in: proxy.size) },
-                            set: { aiAssistantFrame = $0 })
-                    )
-                }
-            }
             .onAppear { viewSize = proxy.size }
             .onChange(of: proxy.size) { _, newSize in
                 let oldSize = viewSize
                 let hadSize = oldSize.width > 1
-                let fitPan = CGSize(width: oldSize.width / 2 + (bounds.midX - fullBounds.midX) * zoom,
-                                    height: oldSize.height / 2 - (bounds.midY - fullBounds.midY) * zoom)
-                let wasFitted = hadSize && abs(zoom - fitZoom(for: fullBounds)) < max(zoom * 0.01, 1e-9)
-                    && abs(pan.width - fitPan.width) < 2 && abs(pan.height - fitPan.height) < 2
+                let resizedViewport = session.viewport.resized(from: oldSize, to: newSize,
+                                                              fitBounds: [fullBounds, bounds])
                 viewSize = newSize
                 if let saved = session.pendingWorkspace { _ = session.restoreWorkspace(saved) }
                 else if searchVisible, searchResults.indices.contains(searchCursor) { performGoTo(hit: searchResults[searchCursor]) }
                 else if !hadSize { fitToView() }
-                else if wasFitted { fitButtonPressed() }
                 else {
-                    pan.width += (newSize.width - oldSize.width) / 2
-                    pan.height += (newSize.height - oldSize.height) / 2
+                    session.restoreViewport(resizedViewport)
                 }
             }
         }
@@ -1428,20 +1389,19 @@ struct ContentView: View {
     // MARK: - Deep search
 
     private func toggleSearch() {
-        searchVisible.toggle()
-        if searchVisible {
+        if searchVisible { closeSearch() }
+        else {
+            animationTimer?.invalidate()
+            session.beginSearch()
             DispatchQueue.main.async { searchFocused = true }
-        } else {
-            closeSearch()
         }
     }
 
     private func closeSearch() {
-        searchVisible = false
+        animationTimer?.invalidate()
+        halo = nil
         searchFocused = false
-        searchQuery = ""
-        searchResults = []
-        searchCursor = -1
+        session.endSearch()
     }
 
     private func runSearch() {
@@ -1483,20 +1443,8 @@ struct ContentView: View {
             selection = [id]
         }
 
-        // Zoom: keep the current level if the target is comfortably visible,
-        // else zoom so its text height lands around 40 points.
-        var targetZoom = zoom
-        if hit.screenHeightHint > 0 {
-            let current = hit.screenHeightHint * zoom
-            if current < 14 || current > 300 { targetZoom = 40 / hit.screenHeightHint }
-        }
-        targetZoom = max(1e-9, min(targetZoom, 1e9))
-
-        let sx = targetZoom * (hit.position.x - bounds.midX)
-        let sy = -targetZoom * (hit.position.y - bounds.midY)
-        let targetPan = CGSize(width: viewSize.width / 2 - sx,
-                               height: viewSize.height / 2 - sy)
-        animateViewport(toZoom: targetZoom, pan: targetPan)
+        let target = SearchFraming.viewport(for: hit, size: viewSize)
+        animateViewport(toZoom: target.zoom, pan: target.pan(in: viewSize, bounds: bounds))
         halo = SearchHalo(position: hit.position,
                           worldRadius: hit.screenHeightHint * 1.6,
                           until: Date().addingTimeInterval(3), bounds: hit.bounds)
@@ -1534,9 +1482,9 @@ struct ContentView: View {
                         .font(.caption).monospacedDigit()
                         .foregroundColor(.secondary)
                     Button { nextHit(-1) } label: { Image(systemName: "chevron.up") }
-                        .buttonStyle(.plain)
+                        .buttonStyle(CompactControlButtonStyle()).accessibilityLabel("Previous search match")
                     Button { nextHit(1) } label: { Image(systemName: "chevron.down") }
-                        .buttonStyle(.plain).accessibilityLabel("Next search match")
+                        .buttonStyle(CompactControlButtonStyle()).accessibilityLabel("Next search match")
                     Menu {
                         ForEach(searchResults) { hit in
                             Button(hit.label) {
@@ -1554,7 +1502,7 @@ struct ContentView: View {
                 Button { closeSearch() } label: {
                     Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(CompactControlButtonStyle()).accessibilityLabel("Close search")
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -6725,6 +6673,8 @@ struct ContentView: View {
         commandMessage = ""
         halo = nil
         animationTimer?.invalidate()
+        session.searchOrigin = nil
+        session.sheetViewports = currentSourceURL.map { WorkspaceStore.load($0).sheetViewports ?? [:] } ?? [:]
         closeSearch()
         searchIndex = SearchIndex(document: doc, store: coordinator.parsed.store)
         // Layers marked off/frozen in the file start hidden, like AutoCAD.

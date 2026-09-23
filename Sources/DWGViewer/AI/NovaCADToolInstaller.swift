@@ -67,15 +67,17 @@ enum NovaCADToolInstaller {
     static let tools: [ToolSpec] = [
         ToolSpec(
             name: "read_drawing",
-            description: "Read a summary of every entity currently visible in the drawing's model or paper space: entity id, type (line/circle/text/insert/etc.), layer name, world-space bounding box, and — for TEXT/MTEXT/ATTRIB — the text content, and — for INSERT — the block name it references. Large drawings are capped and marked truncated. Use this first to understand what's in the drawing before proposing any edit.",
-            argsDeclaration: "space: \(arg("str", "\"model\" or \"paper\" (default \"model\")", optional: true))"
+            description: "Read a compact overview: active space and sheet, available paper sheets, coordinate units, visible layers/counts, and a small entity sample. Defaults to the active view. Use query_entities for targeted text/block searches and paged details; the overview is not exhaustive.",
+            argsDeclaration: "space: \(arg("str", "\"model\" or \"paper\" (default active view)", optional: true))"
         ),
         ToolSpec(
             name: "list_inserts_on_layer",
-            description: "Exhaustively lists every visible block reference on one layer without the large-drawing cap used by read_drawing. Use this for workstation enumeration in large drawings.",
+            description: "Paged block references on one layer, including total count, returned count and nextOffset. Follow nextOffset for additional rows. For complete distance tables use the native export tool.",
             argsDeclaration: """
     layerName: \(arg("str", "Layer to enumerate, e.g. 'station blocks'")),
-    space: \(arg("str", "\"model\" or \"paper\" (default \"model\")", optional: true))
+    offset: \(arg("num", "Row offset, default 0; follow nextOffset", optional: true)),
+    limit: \(arg("num", "Maximum rows, default 30, max 100; also byte-limited", optional: true)),
+    space: \(arg("str", "\"model\" or \"paper\" (default active view)", optional: true))
     """
         ),
         ToolSpec(
@@ -97,7 +99,7 @@ enum NovaCADToolInstaller {
             argsDeclaration: """
     x: \(arg("num", "World-space X coordinate")),
     y: \(arg("num", "World-space Y coordinate")),
-    space: \(arg("str", "\"model\" or \"paper\" (default \"model\")", optional: true))
+    space: \(arg("str", "\"model\" or \"paper\" (default active view)", optional: true))
     """
         ),
         ToolSpec(
@@ -112,7 +114,7 @@ enum NovaCADToolInstaller {
     layerName: \(arg("str", "The layer whose block references should all receive this attribute")),
     attributeTag: \(arg("str", "The ATTRIB tag to set on every object, e.g. \"ROUTE\" or \"STATUS\"")),
     value: \(arg("str", "The value to set that tag to on every matching object")),
-    space: \(arg("str", "\"model\" or \"paper\" (default \"model\")", optional: true))
+    space: \(arg("str", "\"model\" or \"paper\" (default active view)", optional: true))
     """
         ),
 
@@ -127,7 +129,7 @@ enum NovaCADToolInstaller {
             description: "Analyzes an aisle centerline layer's connectivity: how many disconnected pieces it's split into, every gap between them (with distance in feet and exact coordinates), and the aisle widths detected (either measured from parallel boundary lines, or read from the drawing's own \"13'-4\\\" AISLE\"-style text labels). Always call this BEFORE routing or shading an aisle network, since a real aisle layer is routinely fragmented into dozens of pieces that merely LOOK continuous.",
             argsDeclaration: """
     layerName: \(arg("str", "The aisle centerline layer name, e.g. \"AISLE\"")),
-    space: \(arg("str", "\"model\" or \"paper\" (default \"model\")", optional: true))
+    space: \(arg("str", "\"model\" or \"paper\" (default active view)", optional: true))
     """
         ),
         ToolSpec(
@@ -135,7 +137,7 @@ enum NovaCADToolInstaller {
             description: "Stages inferred bridging connectors for disconnected aisle components. The target may be the same aisle layer, another existing layer, or a new repair layer. Short gaps are common drafting slips; large physical separations should not be bridged.",
             argsDeclaration: """
     layerName: \(arg("str", "The aisle centerline layer name")),
-    space: \(arg("str", "\"model\" or \"paper\" (default \"model\")", optional: true)),
+    space: \(arg("str", "\"model\" or \"paper\" (default active view)", optional: true)),
     maxGapDistanceFeet: \(arg("num", "Maximum inferred connector distance in feet (default 10)", optional: true)),
     targetLayerName: \(arg("str", "Optional destination layer; omit for '<layerName>-REPAIRED'", optional: true))
     """
@@ -145,7 +147,7 @@ enum NovaCADToolInstaller {
             description: "Resolves a name to routable world-space coordinates: an individual dock door (\"Dock 4\"), a named dock group (\"blue docks\" — reduced to the centroid of its member doors), or a station/marketplace block by name. Returns every match found. Use the returned x/y as the origin/destination for route_along_aisles.",
             argsDeclaration: """
     query: \(arg("str", "A dock number, dock group name, or (partial) block name to search for")),
-    space: \(arg("str", "\"model\" or \"paper\" (default \"model\")", optional: true))
+    space: \(arg("str", "\"model\" or \"paper\" (default active view)", optional: true))
     """
         ),
         ToolSpec(
@@ -154,7 +156,7 @@ enum NovaCADToolInstaller {
             argsDeclaration: """
     aisleLayerName: \(arg("str", "The aisle layer to route along")),
     connectorLayerName: \(arg("str", "Optional second layer to union with the aisle network", optional: true)),
-    space: \(arg("str", "\"model\" or \"paper\" (default \"model\")", optional: true)),
+    space: \(arg("str", "\"model\" or \"paper\" (default active view)", optional: true)),
     useSelectionAsOrigin: \(arg("bool", "Use the user's current canvas selection as the origin", optional: true)),
     originX: \(arg("num", "Origin world-space X", optional: true)),
     originY: \(arg("num", "Origin world-space Y", optional: true)),
@@ -177,7 +179,7 @@ enum NovaCADToolInstaller {
     destinationLayerName: \(arg("str", "Layer containing the destination block references (workstations / points of fit)")),
     aisleLayerName: \(arg("str", "Primary aisle network layer")),
     connectorLayerName: \(arg("str", "Optional separate repair/connector layer", optional: true)),
-    space: \(arg("str", "\"model\" or \"paper\" (default \"model\")", optional: true)),
+    space: \(arg("str", "\"model\" or \"paper\" (default active view)", optional: true)),
     useSelectionAsOrigin: \(arg("bool", "Use the user's current canvas selection as the shared origin", optional: true)),
     originQuery: \(arg("str", "Reference dock, group, station, or block name", optional: true)),
     originX: \(arg("num", "Optional explicit origin X", optional: true)),
@@ -194,7 +196,7 @@ enum NovaCADToolInstaller {
         ToolSpec(
             name: "get_selected_objects",
             description: "Reports what the user currently has SELECTED on the drawing canvas: entity id, type, layer, block/display name, text content, and world-space footprint for each, plus the combined bounding box. Use whenever the user points rather than names — \"use this as the origin\", \"measure from the selected object\", \"what did I just click\".",
-            argsDeclaration: "space: \(arg("str", "\"model\" or \"paper\" (default \"model\")", optional: true))"
+            argsDeclaration: "space: \(arg("str", "\"model\" or \"paper\" (default active view)", optional: true))"
         ),
         ToolSpec(
             name: "draw_polylines",
@@ -202,7 +204,7 @@ enum NovaCADToolInstaller {
             argsDeclaration: """
     pathsJSON: \(arg("str", "JSON array of paths as a string; each path is [[x,y],[x,y],...] or {\"points\":[[x,y],...]}")),
     layerName: \(arg("str", "Layer to draw on (default \"AI-TRAVEL-PATHS\")", optional: true)),
-    space: \(arg("str", "\"model\" or \"paper\" (default \"model\")", optional: true)),
+    space: \(arg("str", "\"model\" or \"paper\" (default active view)", optional: true)),
     closed: \(arg("bool", "Close each path into a filled shape instead of an open polyline (default false)", optional: true)),
     colorIndex: \(arg("num", "AutoCAD color index; 256 = ByLayer (default)", optional: true)),
     replaceExistingLayerContent: \(arg("bool", "Clear the target layer first so redrawn batches don't stack (default false)", optional: true))
@@ -210,15 +212,16 @@ enum NovaCADToolInstaller {
         ),
         ToolSpec(
             name: "query_entities",
-            description: "FILTERED, PAGED entity search — the right tool for a huge drawing. Answers a targeted question (INSERTs on a layer, blocks whose name contains a string, text containing a phrase) and returns pages via offset/limit with totalMatched and nextOffset, so an arbitrarily long list can be walked in bounded chunks without flooding the conversation. Use countOnly=true to size a job first.",
+            description: "Search rendered text and block references by layer, name or text. Results have totalMatched and nextOffset; pages have row and byte limits. Use countOnly to size a job. Paper defaults to the active sheet; sheetName reads another sheet without moving the canvas.",
             argsDeclaration: """
     types: \(arg("str", "Comma-separated entity types to include, e.g. \"insert\" or \"text\". Omit for all.", optional: true)),
     layerContains: \(arg("str", "Only entities whose layer name contains this (case-insensitive)", optional: true)),
     nameContains: \(arg("str", "For INSERTs: only those whose block/display name contains this", optional: true)),
     textContains: \(arg("str", "For TEXT/MTEXT: only those whose content contains this", optional: true)),
-    space: \(arg("str", "\"model\" or \"paper\" (default \"model\")", optional: true)),
+    sheetName: \(arg("str", "Exact paper sheet name; use with space: paper. Omit for active sheet.", optional: true)),
+    space: \(arg("str", "\"model\" or \"paper\" (default active view)", optional: true)),
     offset: \(arg("num", "Row offset for paging (default 0) — pass the previous reply's nextOffset", optional: true)),
-    limit: \(arg("num", "Maximum rows to return (default 200, max 2000)", optional: true)),
+    limit: \(arg("num", "Maximum rows to return (default 30, max 100, also byte-limited)", optional: true)),
     countOnly: \(arg("bool", "Return only totalMatched with no rows (default false)", optional: true))
     """
         ),
@@ -235,7 +238,7 @@ enum NovaCADToolInstaller {
             description: "Stages a shaded overlay covering the physical footprint of every aisle on a layer, for the user to review and approve. Each aisle is buffered into a filled rectangle at its own measured/annotated width and placed on a NEW '<layerName>-SHADED' layer. The shapes intentionally overlap at junctions; the target layer's transparency should be set so overlaps don't look like dark blotches.",
             argsDeclaration: """
     layerName: \(arg("str", "The aisle centerline layer to shade")),
-    space: \(arg("str", "\"model\" or \"paper\" (default \"model\")", optional: true)),
+    space: \(arg("str", "\"model\" or \"paper\" (default active view)", optional: true)),
     fallbackWidthFeet: \(arg("num", "Width to use for aisle segments with no measured or annotated width, in feet (default 13.34)", optional: true))
     """
         ),
@@ -243,7 +246,7 @@ enum NovaCADToolInstaller {
             name: "shade_dock_aprons",
             description: "Detects dock doors (by their \"DOCK <n>\" text labels) and stages one apron shape per bank of consecutive, evenly-spaced doors, for the user to review and approve. Aprons are placed on a NEW 'Dock Apron-AI' layer, at a caller-supplied depth. Deterministic: call again after docks move to redraw aprons on the same layer with fresh positions.",
             argsDeclaration: """
-    space: \(arg("str", "\"model\" or \"paper\" (default \"model\")", optional: true)),
+    space: \(arg("str", "\"model\" or \"paper\" (default active view)", optional: true)),
     depthFeet: \(arg("num", "Apron depth inward from the dock line, in feet (default 40)", optional: true)),
     endPaddingFeet: \(arg("num", "Extra length added at each end of a bank's frontage, in feet (default 0)", optional: true)),
     depthSuggestionAisleLayerName: \(arg("str", "Optional aisle layer name to measure suggested per-bank depths against", optional: true))

@@ -158,6 +158,7 @@ actor AIClient {
 
         for _ in 0..<Self.maxToolIterations {
             try Task.checkCancellation()
+            wire = try AIContextBudget.compact(wire, model: config.model, system: system, tools: AIToolSchema.tools)
             let body = AnthropicRequest(model: config.model, system: system.isEmpty ? nil : system,
                                         messages: wire, maxTokens: 4096, tools: AIToolSchema.tools)
             let response: AnthropicResponse = try await post(path: "/messages", body: body)
@@ -191,6 +192,7 @@ actor AIClient {
 
         // Iteration cap hit without a terminal answer — one final, tool-free
         // request so the model summarizes rather than leaving the turn hanging.
+        wire = try AIContextBudget.compact(wire, model: config.model, system: system, tools: nil)
         let body = AnthropicRequest(model: config.model, system: system.isEmpty ? nil : system,
                                     messages: wire, maxTokens: 4096)
         let response: AnthropicResponse = try await post(path: "/messages", body: body)
@@ -218,7 +220,7 @@ actor AIClient {
     private static func argumentSummary(tool: String, arguments: [String: Any]) -> String {
         switch tool {
         case "read_drawing":
-            return (arguments["space"] as? String) ?? "model"
+            return (arguments["space"] as? String) ?? "active view"
         case "get_insert_attributes":
             return "entity \(arguments["insertEntityId"] ?? "?")"
         case "find_insert_at_point":
@@ -253,6 +255,9 @@ actor AIClient {
         request.timeoutInterval = Self.requestTimeout
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(body)
+        guard (request.httpBody?.count ?? 0) <= AIContextBudget.requestBytes else {
+            throw AIClientError.transport("This request is too large to send. Narrow the question; your conversation has been kept.")
+        }
         try applyAuth(&request)
         return try await send(request)
     }

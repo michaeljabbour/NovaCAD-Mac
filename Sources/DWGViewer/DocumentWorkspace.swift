@@ -28,8 +28,14 @@ extension DocumentSession {
     func restoreWorkspace(_ view: DrawingWorkspace) -> Bool {
         guard let regen, view.zoom.isFinite, view.zoom > 0, view.centerX.isFinite, view.centerY.isFinite else { return false }
         if viewSize.width <= 0 || viewSize.height <= 0 { pendingWorkspace = view; return true }
-        if let name = view.sheetName, let sheet = regen.parsed.paperLayouts.first(where: { $0.name == name }) {
-            regen.selectPaperLayout(sheet.id)
+        var replacedEmptyLayout = false
+        if let name = view.sheetName {
+            if let sheet = regen.navigationPaperLayouts.first(where: { $0.name == name }) {
+                regen.selectPaperLayout(sheet.id)
+            } else if let first = regen.navigationPaperLayouts.first {
+                regen.selectPaperLayout(first.id)
+                replacedEmptyLayout = true
+            }
         }
         let restoredSpace = SpaceSelection(rawValue: view.space) ?? .model
         space = restoredSpace
@@ -40,15 +46,20 @@ extension DocumentSession {
         zoom = min(1e9, max(1e-9, view.zoom))
         pan = CGSize(width: viewSize.width / 2 + (viewBounds.midX - view.centerX) * zoom,
                      height: viewSize.height / 2 - (viewBounds.midY - view.centerY) * zoom)
+        if replacedEmptyLayout && space == .paper {
+            restoreViewport(.fitted(to: viewBounds, size: viewSize))
+        }
         selection = []
         pendingWorkspace = nil
         objectWillChange.send()
         return true
     }
     func persistWorkspace() {
-        guard !isLoading, let url = currentSourceURL, let view = captureWorkspace() else { return }
+        guard !isLoading, !searchVisible, let url = currentSourceURL, let view = captureWorkspace() else { return }
+        rememberViewport()
         var record = WorkspaceStore.load(url)
         record.lastView = view
+        record.sheetViewports = sheetViewports
         record.resourceDirectories = regen?.parsed.resourceDirectories
         do { try WorkspaceStore.save(record, for: url) }
         catch { workspaceError = "Could not remember this view: \(error.localizedDescription)" }

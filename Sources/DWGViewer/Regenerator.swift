@@ -942,6 +942,7 @@ enum Regenerator {
 
     static func build(from parsed: EditableParsedDocument,
                       parseSeconds: Double,
+                      paperLayoutID: UInt64? = nil,
                       progress: (Double) -> Void) -> DXFDocument {
         let t0 = Date()
         let store = parsed.store
@@ -951,7 +952,7 @@ enum Regenerator {
         var modelImages: [RasterPlacement] = []
         var paperImages: [RasterPlacement] = []
         var viewports: [PaperViewport] = []
-        let paperLayout = parsed.paperLayouts.first { $0.id == parsed.activePaperLayoutID }
+        let paperLayout = parsed.paperLayouts.first { $0.id == (paperLayoutID ?? parsed.activePaperLayoutID) }
 
         // ---- Identify xrefs and route modern model/paper-space blocks ----
         // (Same rules as GeometryBuilder: *MODEL_SPACE/*PAPER_SPACE block

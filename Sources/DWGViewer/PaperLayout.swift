@@ -8,6 +8,35 @@ struct PaperLayout: Identifiable, Equatable {
     let tabOrder: Int
     let blockNames: Set<String>
 
+    /// Navigation excludes empty layouts, not the stored layout records. The
+    /// default viewport (ID 1) describes the paper itself and is not content.
+    static func navigableSheets(in parsed: EditableParsedDocument) -> [PaperLayout] {
+        let sheets = sheets(in: parsed)
+        let byName = Dictionary(uniqueKeysWithValues: sheets.map { ($0.name.lowercased(), $0.id) })
+        let ids = Set(sheets.map(\.id))
+        var blockOwners: [Int32: UInt64] = [:]
+        for block in parsed.blocks.values {
+            if let owner = block.blockRecordHandle, ids.contains(owner) { blockOwners[block.blockIndex] = owner }
+        }
+        let defaultOwner = sheets.first { $0.blockNames.contains { $0.uppercased() == "*PAPER_SPACE" } }?.id
+        var populated = Set<UInt64>()
+        for (index, header) in parsed.store.headers.enumerated() {
+            guard !header.flags.contains(.deleted), header.owner.isPaper || blockOwners[header.owner.raw] != nil else { continue }
+            if header.type == .viewport {
+                let viewport = parsed.store.viewports[Int(header.payload)]
+                guard viewport.viewportID > 1, viewport.status > 0 else { continue }
+            }
+            if let owner = blockOwners[header.owner.raw] { populated.insert(owner); continue }
+            let pairs = parsed.store.residualPairs[Int32(index)]?.pairs ?? []
+            let named = pairs.first { $0.code == 410 }.flatMap { byName[$0.value.lowercased()] }
+            let owner = pairs.first { $0.code == 330 }.flatMap {
+                UInt64($0.value.trimmingCharacters(in: .whitespaces), radix: 16)
+            }
+            if let id = named ?? owner ?? defaultOwner, ids.contains(id) { populated.insert(id) }
+        }
+        return sheets.filter { populated.contains($0.id) }
+    }
+
     static func sheets(in parsed: EditableParsedDocument) -> [PaperLayout] {
         let records = parsed.symbolTables["BLOCK_RECORD"] ?? []
         return parsed.objects.layouts.values.compactMap { layout in

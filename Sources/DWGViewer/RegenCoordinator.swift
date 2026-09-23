@@ -224,6 +224,14 @@ final class RegenCoordinator {
     /// is nearly empty by design — see the plan's load-bearing note), so
     /// this table is what makes editing that file's actual geometry cheap.
     private var orphanRootByBlockIndex: [Int32: (base: CGPoint, xrefId: Int16)]? = nil
+    private var navigationSheetsCache: (UInt64, Int, [PaperLayout])?
+    var navigationPaperLayouts: [PaperLayout] {
+        let key = parsed.document.revision
+        if let cached = navigationSheetsCache, cached.0 == key, cached.1 == parsed.store.count { return cached.2 }
+        let sheets = PaperLayout.navigableSheets(in: parsed)
+        navigationSheetsCache = (key, parsed.store.count, sheets)
+        return sheets
+    }
 
     /// Whether `blockIndex` is an ORPHAN-ROOT block (see `orphanRootTable()`'s
     /// own doc comment) — exposed (unlike `orphanRootTable()` itself, which
@@ -317,7 +325,7 @@ final class RegenCoordinator {
                                                     xrefProgress: xrefProgress,
                                                     progress: { p in progress?(p * 0.85) })
         MarkupStore.ensureMarkupLayer(in: parsed)
-        parsed.activePaperLayoutID = parsed.paperLayouts.first?.id
+        parsed.activePaperLayoutID = PaperLayout.navigableSheets(in: parsed).first?.id
         let doc = Regenerator.build(from: parsed, parseSeconds: 0) { p in progress?(0.85 + p * 0.15) }
         return RegenCoordinator(parsed: parsed, document: doc)
     }

@@ -37,6 +37,7 @@ struct AIAssistantPanel: View {
     /// session in `.onAppear`, so it survives the session being recreated on
     /// document reload.
     var selectionProvider: (() -> Set<EntityID>)? = nil
+    var spaceProvider: (() -> SpaceID)? = nil
     let onApplyEdits: ([AIProposedEdit]) -> Bool
     /// Applies every staged geometry-creation action (aisle repair/route/
     /// shading, dock aprons) — sibling to `onApplyEdits` for the
@@ -44,6 +45,7 @@ struct AIAssistantPanel: View {
     let onApplyGeometry: ([AIProposedGeometry]) -> Bool
     let onClose: () -> Void
     var presentation: Presentation = .docked
+    var embedded = false
     /// Switches presentation: "Float" when docked, "Dock" when floating.
     var onTogglePresentation: (() -> Void)? = nil
 
@@ -100,6 +102,7 @@ struct AIAssistantPanel: View {
         // comment). A no-op for every other provider.
         .onAppear {
             if let selectionProvider { aiSession.selectionProvider = selectionProvider }
+            if let spaceProvider { aiSession.spaceProvider = spaceProvider }
             aiSession.warmUpServer()
         }
     }
@@ -156,12 +159,12 @@ struct AIAssistantPanel: View {
                 .foregroundColor(.secondary)
                 .help(isFloating ? "Dock to Side" : "Float Window")
             }
-            Button {
+            if !embedded { Button {
                 onClose()
             } label: { Image(systemName: "xmark.circle.fill") }
                 .buttonStyle(.plain)
                 .foregroundColor(.secondary)
-                .help("Close AI Assistant")
+                .help("Close AI Assistant") }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, isFloating ? 6 : 10)
@@ -246,7 +249,7 @@ struct AIAssistantPanel: View {
             .padding(.horizontal, 10)
         case .assistant:
             HStack {
-                Text(entry.text)
+                AIMarkdownView(text: entry.text)
                     .font(.callout)
                     .textSelection(.enabled)
                     .padding(8)
@@ -513,6 +516,7 @@ struct FloatingAIAssistantPanel: View {
     /// session in `.onAppear`, so it survives the session being recreated on
     /// document reload.
     var selectionProvider: (() -> Set<EntityID>)? = nil
+    var spaceProvider: (() -> SpaceID)? = nil
     let onApplyEdits: ([AIProposedEdit]) -> Bool
     let onApplyGeometry: ([AIProposedGeometry]) -> Bool
     let onClose: () -> Void
