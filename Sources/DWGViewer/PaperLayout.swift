@@ -11,28 +11,18 @@ struct PaperLayout: Identifiable, Equatable {
     /// Navigation excludes empty layouts, not the stored layout records. The
     /// default viewport (ID 1) describes the paper itself and is not content.
     static func navigableSheets(in parsed: EditableParsedDocument) -> [PaperLayout] {
-        let sheets = sheets(in: parsed)
-        let byName = Dictionary(uniqueKeysWithValues: sheets.map { ($0.name.lowercased(), $0.id) })
-        let ids = Set(sheets.map(\.id))
-        var blockOwners: [Int32: UInt64] = [:]
-        for block in parsed.blocks.values {
-            if let owner = block.blockRecordHandle, ids.contains(owner) { blockOwners[block.blockIndex] = owner }
-        }
-        let defaultOwner = sheets.first { $0.blockNames.contains { $0.uppercased() == "*PAPER_SPACE" } }?.id
+        let ownership = PaperLayoutOwnership(parsed)
+        let sheets = ownership.sheets
         var populated = Set<UInt64>()
         for (index, header) in parsed.store.headers.enumerated() {
-            guard !header.flags.contains(.deleted), header.owner.isPaper || blockOwners[header.owner.raw] != nil else { continue }
+            guard !header.flags.contains(.deleted) else { continue }
             if header.type == .viewport {
                 let viewport = parsed.store.viewports[Int(header.payload)]
                 guard viewport.viewportID > 1, viewport.status > 0 else { continue }
             }
-            if let owner = blockOwners[header.owner.raw] { populated.insert(owner); continue }
-            let pairs = parsed.store.residualPairs[Int32(index)]?.pairs ?? []
-            let named = pairs.first { $0.code == 410 }.flatMap { byName[$0.value.lowercased()] }
-            let owner = pairs.first { $0.code == 330 }.flatMap {
-                UInt64($0.value.trimmingCharacters(in: .whitespaces), radix: 16)
+            if let owner = ownership.ownerSheetID(for: EntityID(raw: Int32(index)), in: parsed.store) {
+                populated.insert(owner)
             }
-            if let id = named ?? owner ?? defaultOwner, ids.contains(id) { populated.insert(id) }
         }
         return sheets.filter { populated.contains($0.id) }
     }
@@ -57,19 +47,53 @@ struct PaperLayout: Identifiable, Equatable {
         }
     }
 
-    func contains(_ id: EntityID, in store: EntityStore) -> Bool {
+    func contains(_ id: EntityID, in store: EntityStore, ownership: PaperLayoutOwnership) -> Bool {
+        ownership.ownerSheetID(for: id, in: store) == self.id
+    }
+}
+
+/// Build once per navigation scan or render walk. Both use the same precedence:
+/// owning paper block, recognized layout name, explicit BLOCK_RECORD, legacy default.
+/// A stale group-410 name falls back to group 330; an unknown explicit owner does
+/// not silently move content into the default sheet.
+struct PaperLayoutOwnership {
+    let sheets: [PaperLayout]
+    private let byName: [String: UInt64]
+    private let ids: Set<UInt64>
+    private let blockOwners: [Int32: UInt64]
+    private let defaultOwner: UInt64?
+
+    init(_ parsed: EditableParsedDocument) {
+        sheets = PaperLayout.sheets(in: parsed)
+        byName = Dictionary(sheets.map { ($0.name.lowercased(), $0.id) }, uniquingKeysWith: { first, _ in first })
+        ids = Set(sheets.map(\.id))
+        var owners: [Int32: UInt64] = [:]
+        for block in parsed.blocks.values {
+            if let owner = block.blockRecordHandle, ids.contains(owner) { owners[block.blockIndex] = owner }
+        }
+        blockOwners = owners
+        defaultOwner = sheets.first { $0.blockNames.contains { $0.uppercased() == "*PAPER_SPACE" } }?.id
+    }
+
+    func ownerSheetID(for id: EntityID, in store: EntityStore) -> UInt64? {
+        guard let header = store.header(id) else { return nil }
+        if let owner = blockOwners[header.owner.raw] { return owner }
+        guard header.owner.isPaper else { return nil }
         let pairs = store.residualPairs[id.raw]?.pairs ?? []
-        // Group 410 is the explicit layout name. Group 330 is the owning
-        // BLOCK_RECORD; it must not be confused with a reactor's group 330.
-        if let name = pairs.first(where: { $0.code == 410 })?.value {
-            return name.caseInsensitiveCompare(self.name) == .orderedSame
+        if let name = pairs.first(where: { $0.code == 410 })?.value,
+           let owner = byName[name.lowercased()] { return owner }
+        // Reactor lists may contain their own 330 references. Only an owner
+        // outside a group-102 control block describes the entity's layout.
+        var controlDepth = 0
+        for pair in pairs {
+            if pair.code == 102 {
+                if pair.value.hasPrefix("{") { controlDepth += 1 }
+                else if pair.value == "}" { controlDepth = max(0, controlDepth - 1) }
+            } else if pair.code == 330, controlDepth == 0,
+                      let owner = UInt64(pair.value.trimmingCharacters(in: .whitespaces), radix: 16) {
+                return ids.contains(owner) ? owner : nil
+            }
         }
-        if let value = pairs.first(where: { $0.code == 330 })?.value,
-           let owner = UInt64(value.trimmingCharacters(in: .whitespaces), radix: 16) {
-            return owner == self.id
-        }
-        // Older DXFs omit the owner on ENTITIES-section paper content; that
-        // section belongs to the active *Paper_Space block, not every sheet.
-        return blockNames.contains { $0.uppercased() == "*PAPER_SPACE" }
+        return defaultOwner
     }
 }

@@ -1,5 +1,9 @@
 # Technical Design: Block INSERT Writing instead of Exploding (Non-exploding Stamps)
 
+> Design reference for the standalone markup exporters. Normal Save/Save As
+> already preserves stamped INSERT entities through `DocumentDXFWriter`.
+> The primitive-only markup export limitations remain documented in [README.md](README.md#save--export).
+
 ## 1. Overview & Context
 
 In NovaCAD, the block stamp tool allows users to pick an existing block symbol (such as a factory station, layout device, or standardized marker) and place copies of it as markups/stamps. 

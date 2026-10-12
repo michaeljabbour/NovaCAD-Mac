@@ -1,33 +1,9 @@
 import SwiftUI
 import CADCore
 
-/// The AI Assistant's chat panel, in either of two presentations:
-///
-/// - **`.floating`** (the default): a movable, resizable glass panel hovering
-///   over the drawing — see `FloatingAIAssistantPanel`, which wraps this view
-///   in `FloatingPanelChrome` and owns the drag/resize gestures. Translucent
-///   (`.ultraThinMaterial`) so the plan view stays readable underneath, since
-///   a floating assistant is borrowing space from the drawing it's discussing.
-/// - **`.docked`**: the original third trailing panel alongside
-///   `PropertiesPanel`/`MarkupPropertiesPanel` (see `ContentView.body`'s
-///   `HStack`), with the same fixed-width, left-divider-overlay styling as
-///   those panels for visual consistency.
-///
-/// The user moves between them with the header's dock/float button, so this
-/// view stays presentation-agnostic apart from the chrome each mode applies
-/// and which of the two swap buttons the header offers.
-///
-/// Shows: a scrolling transcript (user turns, assistant replies, and a live
-/// tool-call timeline row per tool the assistant invokes), a text input, and
-/// — whenever the assistant has staged a bulk-edit plan via
-/// `propose_attribute_edits` — a review card listing every proposed
-/// "tag: old → new" change with Apply/Discard actions (per this feature's
-/// product decision: the assistant NEVER applies anything itself).
+/// Assistant transcript and staged proposals in the shared Properties & AI sidebar.
+/// Applying drawing changes still requires the user's Apply action.
 struct AIAssistantPanel: View {
-    /// Which presentation this instance is being shown in — drives the
-    /// background/chrome and which swap button the header offers.
-    enum Presentation { case docked, floating }
-
     @ObservedObject var aiSession: AIAssistantSession
     let regen: RegenCoordinator?
     let visibility: VisibilityState
@@ -37,61 +13,47 @@ struct AIAssistantPanel: View {
     /// session in `.onAppear`, so it survives the session being recreated on
     /// document reload.
     var selectionProvider: (() -> Set<EntityID>)? = nil
+    var visibilityProvider: (() -> VisibilityState)? = nil
+    var spaceProvider: (() -> SpaceID)? = nil
+    var viewportProvider: (() -> CGRect?)? = nil
     let onApplyEdits: ([AIProposedEdit]) -> Bool
     /// Applies every staged geometry-creation action (aisle repair/route/
     /// shading, dock aprons) — sibling to `onApplyEdits` for the
     /// `AIProposedGeometry` catalog. See that type's own doc comment.
     let onApplyGeometry: ([AIProposedGeometry]) -> Bool
     let onClose: () -> Void
-    var presentation: Presentation = .docked
     var embedded = false
-    /// Switches presentation: "Float" when docked, "Dock" when floating.
-    var onTogglePresentation: (() -> Void)? = nil
 
     @FocusState private var inputFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider().opacity(isFloating ? 0.5 : 1)
+            Divider()
             if !aiSession.stagedEdits.isEmpty {
                 stagedEditsCard
-                Divider().opacity(isFloating ? 0.5 : 1)
+                Divider()
             }
             if !aiSession.stagedGeometry.isEmpty {
                 stagedGeometryCard
-                Divider().opacity(isFloating ? 0.5 : 1)
+                Divider()
             }
             transcript
             if let error = aiSession.errorMessage {
-                Divider().opacity(isFloating ? 0.5 : 1)
+                Divider()
                 Text(error)
                     .font(.caption)
                     .foregroundColor(.red)
                     .textSelection(.enabled)
                     .padding(8)
             }
-            Divider().opacity(isFloating ? 0.5 : 1)
+            Divider()
             inputBar
         }
-        // Floating mode is sized by its container (the draggable frame), so it
-        // fills whatever the user resized it to; docked mode keeps the
-        // fixed-width sidebar contract its siblings use.
-        .frame(width: isFloating ? nil : 300)
-        .background {
-            // The floating case's own translucent material is applied by
-            // `FloatingPanelChrome` on the WRAPPER (so it clips to the same
-            // rounded shape as the border/shadow) — painting an opaque
-            // background here would sit on top of it and defeat the glass.
-            if !isFloating { Color(nsColor: .windowBackgroundColor) }
-        }
-        .overlay {
-            if !isFloating {
-                HStack {
-                    Rectangle().frame(width: 1).foregroundColor(.black.opacity(0.2))
-                    Spacer()
-                }
-            }
+        .frame(width: 300)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .overlay(alignment: .leading) {
+            Rectangle().frame(width: 1).foregroundColor(.black.opacity(0.2))
         }
         // OpenCode (agentic) backend only: eagerly starts the managed
         // `opencode serve` subprocess as soon as this panel appears, so its
@@ -101,11 +63,12 @@ struct AIAssistantPanel: View {
         // comment). A no-op for every other provider.
         .onAppear {
             if let selectionProvider { aiSession.selectionProvider = selectionProvider }
+            if let spaceProvider { aiSession.spaceProvider = spaceProvider }
+            if let viewportProvider { aiSession.viewportProvider = viewportProvider }
+            if let visibilityProvider { aiSession.visibilityProvider = visibilityProvider }
             aiSession.warmUpServer()
         }
     }
-
-    private var isFloating: Bool { presentation == .floating }
 
     private var header: some View {
         HStack(spacing: 8) {
@@ -144,19 +107,6 @@ struct AIAssistantPanel: View {
                 .foregroundColor(.secondary)
                 .disabled(aiSession.history.isEmpty)
                 .help("Clear Conversation")
-            if let onTogglePresentation {
-                Button(action: onTogglePresentation) {
-                    // Floating -> "return to dock"; docked -> "return to
-                    // floating". Distinct glyphs so the action is readable at
-                    // a glance rather than a single ambiguous toggle icon.
-                    Image(systemName: isFloating
-                          ? "arrow.down.right.and.arrow.up.left.rectangle"
-                          : "macwindow.on.rectangle")
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(.secondary)
-                .help(isFloating ? "Dock to Side" : "Float Window")
-            }
             if !embedded { Button {
                 onClose()
             } label: { Image(systemName: "xmark.circle.fill") }
@@ -165,7 +115,7 @@ struct AIAssistantPanel: View {
                 .help("Close AI Assistant") }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, isFloating ? 6 : 10)
+        .padding(.vertical, 10)
     }
 
     /// Live turn-state indicator. Replaces the bare indefinite `ProgressView`
@@ -247,23 +197,12 @@ struct AIAssistantPanel: View {
             .padding(.horizontal, 10)
         case .assistant:
             HStack {
-                Text(entry.text)
+                AIMarkdownView(text: entry.text)
                     .font(.callout)
                     .textSelection(.enabled)
                     .padding(8)
-                    // Floating over a drawing, an opaque bubble fill would
-                    // punch a hole through the glass; a thin material keeps
-                    // the panel airy while still separating the reply from
-                    // the canvas showing through behind it.
-                    .background {
-                        if isFloating {
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(.thinMaterial)
-                        } else {
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(Color(nsColor: .textBackgroundColor).opacity(0.6))
-                        }
-                    }
+                    .background(Color(nsColor: .textBackgroundColor).opacity(0.6),
+                                in: RoundedRectangle(cornerRadius: 8))
                 Spacer(minLength: 30)
             }
             .padding(.horizontal, 10)
@@ -459,19 +398,6 @@ struct AIAssistantPanel: View {
                 .lineLimit(1...4)
                 .focused($inputFocused)
                 .onSubmit { send() }
-                .padding(.horizontal, isFloating ? 8 : 0)
-                .padding(.vertical, isFloating ? 5 : 0)
-                .background {
-                    // A subtly inset capsule gives the floating panel's input
-                    // a defined edge against the translucent body behind it;
-                    // docked mode keeps the plain flush field its sibling
-                    // panels use.
-                    if isFloating {
-                        Capsule(style: .continuous)
-                            .fill(.quaternary.opacity(0.5))
-                            .overlay(Capsule(style: .continuous).strokeBorder(.white.opacity(0.10), lineWidth: 0.8))
-                    }
-                }
             Button {
                 send()
             } label: { Image(systemName: "arrow.up.circle.fill").font(.system(size: 16)) }
@@ -489,116 +415,5 @@ struct AIAssistantPanel: View {
     private func send() {
         guard let regen else { return }
         aiSession.send(regen: regen, visibility: visibility)
-    }
-}
-
-// MARK: - Floating presentation
-
-/// `AIAssistantPanel` in its floating form: glass chrome, a grabber-bar drag
-/// handle above the header, a bottom-trailing resize corner, and clamping that
-/// keeps the panel reachable no matter where it's dragged.
-///
-/// Owns only PRESENTATION state (`frame`, plus which gesture is active); the
-/// conversation itself stays on `AIAssistantSession`, so floating, docking, and
-/// re-floating never disturb the transcript. The `frame` binding lives on
-/// `ContentView` rather than here so a dock -> float round trip returns the
-/// panel to where the user last put it instead of snapping back to the default
-/// position.
-struct FloatingAIAssistantPanel: View {
-    @ObservedObject var aiSession: AIAssistantSession
-    let regen: RegenCoordinator?
-    let visibility: VisibilityState
-    /// Reads the user's live canvas selection for `get_selected_objects` and
-    /// the travel tools' `useSelectionAsOrigin`. Supplied by `ContentView`
-    /// (which captures its `DocumentSession` weakly) and installed onto the
-    /// session in `.onAppear`, so it survives the session being recreated on
-    /// document reload.
-    var selectionProvider: (() -> Set<EntityID>)? = nil
-    let onApplyEdits: ([AIProposedEdit]) -> Bool
-    let onApplyGeometry: ([AIProposedGeometry]) -> Bool
-    let onClose: () -> Void
-    let onDock: () -> Void
-    /// Size of the area the panel floats over — drag/resize clamping is
-    /// relative to this, and it re-clamps when the window resizes so a panel
-    /// parked at the right edge can't be orphaned outside a shrunken window.
-    let containerSize: CGSize
-    @Binding var frame: FloatingPanelFrame
-
-    /// Frame at the moment the current drag/resize began. Gestures apply their
-    /// running `translation` to THIS rather than accumulating onto `frame`
-    /// each tick, which would compound rounding and (worse) fight the clamp:
-    /// once clamped at an edge, further accumulation would keep piling up
-    /// invisible offset that the user then has to "unwind" before the panel
-    /// moves back.
-    @State private var dragAnchor: FloatingPanelFrame?
-    @State private var resizeAnchor: FloatingPanelFrame?
-
-    private var isInteracting: Bool { dragAnchor != nil || resizeAnchor != nil }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            // Drag handle strip. The whole strip is the hit target (not just
-            // the visible grabber) so it's forgiving to grab.
-            PanelGrabber()
-                .frame(maxWidth: .infinity)
-                .padding(.top, 7)
-                .padding(.bottom, 3)
-                .contentShape(Rectangle())
-                .gesture(dragGesture)
-
-            AIAssistantPanel(
-                aiSession: aiSession,
-                regen: regen,
-                visibility: visibility,
-                selectionProvider: selectionProvider,
-                onApplyEdits: onApplyEdits,
-                onApplyGeometry: onApplyGeometry,
-                onClose: onClose,
-                presentation: .floating,
-                onTogglePresentation: onDock
-            )
-        }
-        .frame(width: frame.size.width, height: frame.size.height)
-        .floatingPanelChrome(isInteracting: isInteracting)
-        .overlay(alignment: .bottomTrailing) {
-            PanelResizeCorner()
-                .padding(3)
-                .gesture(resizeGesture)
-        }
-        // Absolute placement inside the container. `.position` is centre-based,
-        // so the origin-based `frame` is converted here; keeping `frame` in
-        // ORIGIN terms (rather than centre) is what makes the clamping math in
-        // `FloatingPanelFrame` readable and testable.
-        .position(x: frame.origin.x + frame.size.width / 2,
-                  y: frame.origin.y + frame.size.height / 2)
-        .onChange(of: containerSize) { _, newSize in
-            frame = frame.clamped(in: newSize)
-        }
-        // A floating panel must sit above the canvas overlays (zoom badge,
-        // dimension-format badge) it may overlap.
-        .zIndex(10)
-        .transition(.asymmetric(
-            insertion: .scale(scale: 0.97, anchor: .topTrailing).combined(with: .opacity),
-            removal: .opacity))
-    }
-
-    private var dragGesture: some Gesture {
-        DragGesture(minimumDistance: 1)
-            .onChanged { value in
-                let anchor = dragAnchor ?? frame
-                if dragAnchor == nil { dragAnchor = anchor }
-                frame = anchor.dragged(by: value.translation, in: containerSize)
-            }
-            .onEnded { _ in dragAnchor = nil }
-    }
-
-    private var resizeGesture: some Gesture {
-        DragGesture(minimumDistance: 1)
-            .onChanged { value in
-                let anchor = resizeAnchor ?? frame
-                if resizeAnchor == nil { resizeAnchor = anchor }
-                frame = anchor.resized(by: value.translation, in: containerSize)
-            }
-            .onEnded { _ in resizeAnchor = nil }
     }
 }

@@ -626,7 +626,7 @@ struct ContentView: View {
             showUnits: { inspector = .units },
             toggleLayers: { sidebarVisibility = sidebarVisibility == .detailOnly ? .all : .detailOnly },
             showInfo: { inspector = .info }, showSearch: toggleSearch,
-            toggleAssistant: openAssistant,
+            toggleAssistant: toggleAssistant,
             zoomIn: { zoomAtCenter(by: 1.7) }, zoomOut: { zoomAtCenter(by: 0.59) }
         )
     }
@@ -742,7 +742,10 @@ struct ContentView: View {
         .disabled(document == nil)
     }
 
-    private func openAssistant() { sidePanelTab = "AI Assistant"; sidePanelVisible = true }
+    private func toggleAssistant() {
+        sidePanelVisible = !(sidePanelVisible && sidePanelTab == "AI Assistant")
+        sidePanelTab = "AI Assistant"
+    }
 
     private var workspaceSidePanel: some View {
         VStack(spacing: 0) {
@@ -752,13 +755,19 @@ struct ContentView: View {
                     Text("AI Assistant").tag("AI Assistant")
                 }.pickerStyle(.segmented).labelsHidden()
                 Button { sidePanelVisible = false } label: {
-                    Image(systemName: "xmark").frame(width: 24, height: 24).contentShape(Rectangle())
-                }.buttonStyle(.plain).accessibilityLabel("Close side panel")
+                    Image(systemName: "xmark")
+                }.buttonStyle(CompactControlButtonStyle()).accessibilityLabel("Close side panel")
             }.padding(8)
             Divider()
             if sidePanelTab == "AI Assistant" {
                 AIAssistantPanel(aiSession: session.aiAssistant, regen: regen, visibility: visibility,
                     selectionProvider: { [weak session] in session?.selection ?? [] },
+                    visibilityProvider: { [weak session] in session?.visibility ?? VisibilityState() },
+                    spaceProvider: { [weak session] in session?.space == .paper ? .paper : .model },
+                    viewportProvider: { [weak session] in
+                        guard let session else { return nil }
+                        return session.viewport.visibleBounds(size: session.viewSize)
+                    },
                     onApplyEdits: applyAIProposedEdits, onApplyGeometry: applyAIProposedGeometry,
                     onClose: { sidePanelVisible = false }, embedded: true)
             } else if !selectedMarkupIDs.isEmpty {
@@ -1330,6 +1339,19 @@ struct ContentView: View {
                 }
             }
             .overlay {
+                if !isLoading, space == .paper, let doc = document,
+                   regen?.navigationPaperLayouts.isEmpty == true,
+                   !(regen?.parsed.paperLayouts.isEmpty ?? true) || (doc.paperGroups.isEmpty && doc.paperImages.isEmpty) {
+                    VStack(spacing: 10) {
+                        Text("No populated paper sheets").font(.headline)
+                        Text("Empty layouts are kept in the drawing and omitted from sheet navigation.")
+                            .foregroundStyle(.secondary).multilineTextAlignment(.center)
+                        Button("Show Model Space") { changeSpace(.model) }
+                    }.padding(20).frame(maxWidth: 360)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+                }
+            }
+            .overlay {
                 if isLoading {
                     VStack(spacing: 12) {
                         Text(currentSourceURL?.lastPathComponent ?? "Opening drawing")
@@ -1371,14 +1393,19 @@ struct ContentView: View {
             .onAppear { viewSize = proxy.size }
             .onChange(of: proxy.size) { _, newSize in
                 let oldSize = viewSize
-                let hadSize = oldSize.width > 1
+                let action = CanvasResizeAction.decide(previous: oldSize, next: newSize,
+                    hasPendingWorkspace: session.pendingWorkspace != nil, searchVisible: searchVisible,
+                    hasSearchMatch: searchResults.indices.contains(searchCursor))
+                let resizedViewport = session.viewport.resized(from: oldSize, to: newSize,
+                                                              fitBounds: [fullBounds, bounds])
                 viewSize = newSize
-                if let saved = session.pendingWorkspace { _ = session.restoreWorkspace(saved) }
-                else if searchVisible, searchResults.indices.contains(searchCursor) { performGoTo(hit: searchResults[searchCursor]) }
-                else if !hadSize { fitToView() }
-                else {
-                    pan.width += (newSize.width - oldSize.width) / 2
-                    pan.height += (newSize.height - oldSize.height) / 2
+                switch action {
+                case .waitForSize: break
+                case .restoreWorkspace:
+                    if let saved = session.pendingWorkspace { _ = session.restoreWorkspace(saved) }
+                case .frameSearchMatch: performGoTo(hit: searchResults[searchCursor])
+                case .initialFit: fitToView()
+                case .resizeViewport: session.restoreViewport(resizedViewport)
                 }
             }
         }
@@ -1480,9 +1507,9 @@ struct ContentView: View {
                         .font(.caption).monospacedDigit()
                         .foregroundColor(.secondary)
                     Button { nextHit(-1) } label: { Image(systemName: "chevron.up") }
-                        .buttonStyle(.plain)
+                        .buttonStyle(CompactControlButtonStyle()).accessibilityLabel("Previous search match")
                     Button { nextHit(1) } label: { Image(systemName: "chevron.down") }
-                        .buttonStyle(.plain).accessibilityLabel("Next search match")
+                        .buttonStyle(CompactControlButtonStyle()).accessibilityLabel("Next search match")
                     Menu {
                         ForEach(searchResults) { hit in
                             Button(hit.label) {
@@ -1500,7 +1527,7 @@ struct ContentView: View {
                 Button { closeSearch() } label: {
                     Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(CompactControlButtonStyle()).accessibilityLabel("Close search")
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)

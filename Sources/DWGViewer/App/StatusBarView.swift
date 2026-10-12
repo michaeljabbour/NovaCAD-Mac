@@ -48,15 +48,17 @@ struct SheetNavigationView: View {
             }.pickerStyle(.segmented).labelsHidden().frame(width: 130)
             if space == .paper, !sheets.isEmpty {
                 Button { onSelect(sheets[index - 1].id) } label: {
-                    Image(systemName: "chevron.left").frame(width: 24, height: 24).contentShape(Rectangle())
+                    Image(systemName: "chevron.left")
                 }
+                    .buttonStyle(CompactControlButtonStyle())
                     .disabled(index == 0).help("Previous sheet").accessibilityLabel("Previous sheet")
                 Picker("Sheet", selection: Binding(get: { activeID ?? sheets[0].id }, set: onSelect)) {
                     ForEach(sheets) { Text($0.name).tag($0.id) }
                 }.labelsHidden().frame(minWidth: 180, maxWidth: 320)
                 Button { onSelect(sheets[index + 1].id) } label: {
-                    Image(systemName: "chevron.right").frame(width: 24, height: 24).contentShape(Rectangle())
+                    Image(systemName: "chevron.right")
                 }
+                    .buttonStyle(CompactControlButtonStyle())
                     .disabled(index >= sheets.count - 1).help("Next sheet").accessibilityLabel("Next sheet")
                 Text("\(index + 1)/\(sheets.count)").font(.caption).monospacedDigit().foregroundStyle(.secondary)
             }
@@ -78,7 +80,7 @@ struct WorkspaceInspectorCard<Content: View>: View {
                 Text(title).font(.headline)
                 Spacer()
                 Button(action: onClose) { Image(systemName: "xmark.circle.fill") }
-                    .buttonStyle(.plain).accessibilityLabel("Close \(title)")
+                    .buttonStyle(CompactControlButtonStyle()).accessibilityLabel("Close \(title)")
             }
             Divider()
             content()
@@ -130,11 +132,14 @@ struct AnchoredInspector<Content: View>: View {
     @State private var size = CGSize(width: 390, height: 300)
     var body: some View {
         let frame = InspectorPlacement.frame(anchor: anchor, size: size, container: container, statusBar: statusBar)
-        content()
-            .fixedSize(horizontal: false, vertical: true)
-            .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
-            .frame(width: frame.width, height: frame.height, alignment: .top)
-            .clipped()
-            .offset(x: frame.minX, y: frame.minY)
+        ScrollView([.horizontal, .vertical]) {
+            content()
+                .fixedSize(horizontal: true, vertical: true)
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
+        }
+        .frame(width: frame.width, height: frame.height, alignment: .topLeading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .offset(x: frame.minX, y: frame.minY)
     }
 }
