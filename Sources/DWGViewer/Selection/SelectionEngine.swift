@@ -349,23 +349,8 @@ enum SelectionEngine {
     /// text identically), just exposed as 4 corner points instead of a
     /// local-space accept/reject box.
     private static func textRotatedCorners(_ t: TextItem) -> [Vec2] {
-        let lines = t.text.components(separatedBy: "\n")
-        let maxChars = lines.reduce(1) { max($0, $1.count) }
-        let w = t.height * 0.75 * max(t.widthFactor, 0.1) * CGFloat(maxChars)
-        let lineAdv = t.height * 5 / 3
-        let totalH = t.height + CGFloat(lines.count - 1) * lineAdv
-        let x0: CGFloat, x1: CGFloat
-        switch t.hAlign {
-        case 1: x0 = -w / 2; x1 = w / 2
-        case 2: x0 = -w; x1 = 0
-        default: x0 = 0; x1 = w
-        }
-        let y0: CGFloat, y1: CGFloat
-        switch t.vAlign {
-        case 3: y0 = -totalH; y1 = 0
-        case 2: y0 = -totalH / 2; y1 = totalH / 2
-        default: y0 = -(totalH - t.height); y1 = t.height
-        }
+        let box = t.localBounds
+        let x0 = box.minX, x1 = box.maxX, y0 = box.minY, y1 = box.maxY
         let rot = t.rotationDegrees * .pi / 180
         let c = cos(rot), s = sin(rot)
         func rotated(_ lx: CGFloat, _ ly: CGFloat) -> Vec2 {

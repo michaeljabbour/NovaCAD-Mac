@@ -159,7 +159,7 @@ extension DXFStructuralWriter {
         assignSpaceBlockHandles(name: "*Paper_Space", parsed: parsed, graph: graph)
         for (name, b) in parsed.blocks {
             let upper = name.uppercased()
-            guard !upper.hasPrefix("*MODEL_SPACE"), upper != "$MODEL_SPACE", !upper.hasPrefix("*PAPER_SPACE") else { continue }
+            guard upper != "*MODEL_SPACE", upper != "$MODEL_SPACE", upper != "*PAPER_SPACE" else { continue }
             graph.blockEntityHandles[name] = graph.reuseOrAllocate(b.handle)
             graph.endBlkHandles[name] = graph.allocator.allocate()
             graph.blockRecordHandles[name] = graph.reuseOrAllocate(b.blockRecordHandle ?? 0)
@@ -248,10 +248,9 @@ extension DXFStructuralWriter {
     }
 
     private static func assignSpaceBlockHandles(name: String, parsed: EditableParsedDocument, graph: HandleGraph) {
-        // Find a parsed BLOCK def matching this space (by prefix, matching
-        // Regenerator's own `*MODEL_SPACE`/`*PAPER_SPACE`-prefix convention)
-        // to reuse its handles if present; otherwise allocate fresh ones.
-        let match = parsed.blocks.first { $0.key.uppercased().hasPrefix(name.uppercased()) }?.value
+        // Match the canonical space exactly: suffixed paper-space blocks
+        // belong to separate layouts and must retain their own handles.
+        let match = parsed.blocks.first { $0.key.caseInsensitiveCompare(name) == .orderedSame }?.value
         graph.blockEntityHandles[name] = graph.reuseOrAllocate(match?.handle ?? 0)
         graph.endBlkHandles[name] = graph.allocator.allocate()
         graph.blockRecordHandles[name] = graph.reuseOrAllocate(match?.blockRecordHandle ?? 0)

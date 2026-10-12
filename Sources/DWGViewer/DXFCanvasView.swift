@@ -1441,16 +1441,24 @@ struct DXFCanvasView: NSViewRepresentable {
         private func drawHalo(_ ctx: CGContext) {
             guard let halo, halo.until > Date() else { return }
             let remaining = halo.until.timeIntervalSinceNow
-            let phase = 1 - max(0, min(1, remaining / 1.5))        // 0 → 1 over life
+            let phase = 1 - max(0, min(1, remaining / 3))        // 0 → 1 over life
             let pulse = 1 + 0.25 * sin(phase * .pi * 4)            // two pulses
             let center = toView(halo.position)
             let baseR = max(halo.worldRadius * currentParams.zoom, 22)
             let r = baseR * pulse
-            let alpha = max(0, remaining / 1.5) * 0.95
+            let alpha = max(0, remaining / 3) * 0.95
 
             ctx.saveGState()
             ctx.setStrokeColor(NSColor.systemYellow.withAlphaComponent(alpha).cgColor)
             ctx.setLineWidth(3)
+            if let bounds = halo.bounds {
+                let a = toView(CGPoint(x: bounds.minX, y: bounds.minY))
+                let b = toView(CGPoint(x: bounds.maxX, y: bounds.maxY))
+                let box = CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(b.x - a.x), height: abs(b.y - a.y))
+                ctx.stroke(box.insetBy(dx: -5, dy: -5))
+                ctx.restoreGState()
+                return
+            }
             ctx.strokeEllipse(in: CGRect(x: center.x - r, y: center.y - r,
                                          width: r * 2, height: r * 2))
             ctx.setStrokeColor(NSColor.systemYellow.withAlphaComponent(alpha * 0.4).cgColor)

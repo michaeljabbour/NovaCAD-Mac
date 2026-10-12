@@ -37,6 +37,29 @@ import CADCore
 /// change (a parallel effort owns it) — flagged here rather than patched.
 final class XrefMergeTests: XCTestCase {
 
+    func testStandaloneDrawingDoesNotEnumerateItsFolderWithoutXrefs() throws {
+        let parsed = try PackageLoader.loadIntoStore(
+            url: TestFixtures.url("basic_entities.dxf"),
+            drawingIndexer: { _, _ in
+                XCTFail("Opening a self-contained file must not require folder access")
+                return [:]
+            })
+        XCTAssertGreaterThan(parsed.store.count, 0)
+    }
+
+    func testStandaloneXrefsStillIndexSiblingsNonrecursively() throws {
+        var calls = 0
+        let source = TestFixtures.url("xref_host.dxf")
+        let parsed = try PackageLoader.loadIntoStore(url: source, drawingIndexer: { folder, recursive in
+            calls += 1
+            XCTAssertEqual(folder, source.deletingLastPathComponent())
+            XCTAssertFalse(recursive)
+            return PackageLoader.drawingIndex(in: folder, recursive: recursive)
+        })
+        XCTAssertEqual(calls, 1)
+        XCTAssertGreaterThan(parsed.blocks["RESOLVED_XREF"]?.entityCount ?? 0, 0)
+    }
+
     private func loadBoth() throws -> (old: DXFDocument, new: DXFDocument) {
         let url = TestFixtures.url("xref_host.dxf")
         let old = try PackageLoader.load(url: url)

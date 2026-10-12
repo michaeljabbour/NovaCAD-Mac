@@ -93,6 +93,8 @@ public struct DXFLayer: Identifiable {
     /// data holder with no validating initializer today (matching how
     /// `color`/`linetypeId` are equally unvalidated at this layer).
     public var transparency: Double = 0
+    /// DXF group 370, hundredths of a millimeter; -3 is the drawing default.
+    public var lineweight: Int16 = -3
     /// Phase 3 groundwork: this LAYER record's original DXF handle (group
     /// 5), 0 if the source file had none (R12, or a layer synthesized by
     /// this app rather than parsed). Purely additive — every existing
@@ -632,6 +634,10 @@ public final class DXFDocument {
     /// exists (nil for ZIP members, converted DWGs, and other temp sources).
     /// Enables "Save Copy with Markup".
     public var sourceDXFURL: URL? = nil
+    public var modelImages: [RasterPlacement] = []
+    public var paperImages: [RasterPlacement] = []
+    public var paperViewports: [PaperViewport] = []
+    public var renderingWarnings: [String] = []
 
     public init(layers: [DXFLayer], linetypes: [DXFLinetype], xrefs: [XrefInfo],
          modelGroups: [RenderGroup], paperGroups: [RenderGroup],

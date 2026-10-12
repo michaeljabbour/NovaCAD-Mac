@@ -44,6 +44,7 @@ struct AIAssistantPanel: View {
     let onApplyGeometry: ([AIProposedGeometry]) -> Bool
     let onClose: () -> Void
     var presentation: Presentation = .docked
+    var embedded = false
     /// Switches presentation: "Float" when docked, "Dock" when floating.
     var onTogglePresentation: (() -> Void)? = nil
 
@@ -156,12 +157,12 @@ struct AIAssistantPanel: View {
                 .foregroundColor(.secondary)
                 .help(isFloating ? "Dock to Side" : "Float Window")
             }
-            Button {
+            if !embedded { Button {
                 onClose()
             } label: { Image(systemName: "xmark.circle.fill") }
                 .buttonStyle(.plain)
                 .foregroundColor(.secondary)
-                .help("Close AI Assistant")
+                .help("Close AI Assistant") }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, isFloating ? 6 : 10)
@@ -213,7 +214,7 @@ struct AIAssistantPanel: View {
                         Text("Ask about the drawing, e.g. \u{201c}What layers are on this drawing?\u{201d} "
                              + "or \u{201c}Rename the workstation labeled STN-4 to match its label text.\u{201d}")
                             .font(.callout)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.primary)
                             .padding(10)
                     }
                     ForEach(aiSession.history) { entry in

@@ -142,6 +142,29 @@ enum SnapshotMode {
         }
         // ================== end Phase 3.4: --roundtrip ===================
 
+        if let index = args.firstIndex(of: "--export-pdf") {
+            guard args.count > index + 2, let input = args.last else { exit(2) }
+            do {
+                let coordinator = try RegenCoordinator.loadPackage(url: URL(fileURLWithPath: input))
+                let parsed = coordinator.parsed
+                var sheets: [UInt64?] = parsed.paperLayouts.map { Optional($0.id) }
+                if let i = args.firstIndex(of: "--layout"), args.count > i + 1 {
+                    guard let sheet = parsed.paperLayouts.first(where: { $0.name == args[i + 1] }) else {
+                        print("Unknown layout"); exit(2)
+                    }
+                    sheets = [sheet.id]
+                }
+                if sheets.isEmpty { sheets = [nil] }
+                let warnings = try SheetPDFExporter.write(parsed, to: URL(fileURLWithPath: args[index + 1]),
+                    options: PDFExportOptions(sheets: sheets, scale: args.contains("--pdf-fit") ? .fit : .pageSetup)) { done, total in
+                        print("PDF page \(done)/\(total)")
+                    }
+                for warning in warnings { print("PDF warning: \(warning)") }
+                print("PDF exported: \(args[index + 1])")
+                exit(0)
+            } catch { print("PDF export failed: \(error.localizedDescription)"); exit(1) }
+        }
+
         guard let flagIdx = args.firstIndex(of: "--snapshot") else { return }
         guard args.count > flagIdx + 1 else {
             FileHandle.standardError.write(Data("usage: DWGViewer --snapshot out.png [--size WxH] [--space paper] [--light] file.dxf\n".utf8))
@@ -169,7 +192,10 @@ enum SnapshotMode {
                 exit(2)
             }
         }
-        let usePaper = args.contains("--space") &&
+        let requestedLayout = args.firstIndex(of: "--layout").flatMap { i in
+            args.count > i + 1 ? args[i + 1] : nil
+        }
+        let usePaper = requestedLayout != nil || args.contains("--space") &&
             (args.firstIndex(of: "--space").map { args.count > $0 + 1 && args[$0 + 1] == "paper" } ?? false)
         let dark = !args.contains("--light")
 
@@ -230,7 +256,7 @@ enum SnapshotMode {
         // path (plain .dxf/.dwg, folder, eTransmit .zip) — xref/DWG/ZIP
         // resolution routes through `PackageLoader.loadIntoStore`, the
         // EntityStore-level equivalent of `PackageLoader.load`.
-        let useNewPath = args.contains("--new-path")
+        let useNewPath = args.contains("--new-path") || requestedLayout != nil
 
         do {
             let t0 = Date()
@@ -242,6 +268,16 @@ enum SnapshotMode {
                     if pct / 10 != lastPct / 10 { lastPct = pct; print("progress: \(pct)%") }
                 })
                 let parseSeconds = Date().timeIntervalSince(t0)
+                if let requestedLayout {
+                    guard let sheet = parsed.paperLayouts.first(where: {
+                        $0.name.caseInsensitiveCompare(requestedLayout) == .orderedSame
+                    }) else {
+                        FileHandle.standardError.write(Data("snapshot: unknown sheet '\(requestedLayout)'; available: \(parsed.paperLayouts.map(\.name).joined(separator: ", "))\n".utf8))
+                        exit(2)
+                    }
+                    parsed.activePaperLayoutID = sheet.id
+                    print("sheet: \(sheet.name)")
+                }
                 doc = Regenerator.build(from: parsed, parseSeconds: parseSeconds) { p in
                     let pct = 70 + Int(p * 30)
                     if pct / 10 != lastPct / 10 { lastPct = pct; print("progress: \(pct)%") }

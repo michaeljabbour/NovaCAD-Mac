@@ -96,6 +96,9 @@ extension PackageLoader {
     static func loadIntoStore(url: URL,
                               isCancelled: (() -> Bool)? = nil,
                               xrefProgress: ((XrefProgress) -> Void)? = nil,
+                              drawingIndexer: (URL, Bool) -> [String: URL] = {
+                                  PackageLoader.drawingIndex(in: $0, recursive: $1)
+                              },
                               progress: ((Double) -> Void)? = nil) throws -> EditableParsedDocument {
         let fm = FileManager.default
         var mainURL = url
@@ -152,20 +155,17 @@ extension PackageLoader {
 
         // Persistent DWG→DXF cache: for a folder/zip package, converted DXFs
         // land in a stable per-package bucket and only changed DWGs
-        // re-convert on re-open. Disabled (or non-deep single-file opens)
+        // re-convert on re-open. With caching disabled, conversions
         // fall back to the original temp-dir conversion, cleaned up via
-        // `tempDirs`. `DWGCache.isEnabled` itself is `internal` to CADCore
-        // (not `public`), so this reads the exact same UserDefaults key
-        // CADCore's own `DWGCache.isEnabled` getter reads, mirroring its
-        // "default ON" semantics without needing a CADCore API change.
-        let dwgCacheEnabled: Bool = {
-            if UserDefaults.standard.object(forKey: "dwgCacheEnabled") == nil { return true }
-            return UserDefaults.standard.bool(forKey: "dwgCacheEnabled")
-        }()
-        let cacheBucket: URL? = (deepPackage && dwgCacheEnabled)
+        // `tempDirs`. Single-file opens use the same persistent cache as
+        // packages: reopening an unchanged DWG never starts the converter.
+        let cacheBucket: URL? = DWGCache.isEnabled
             ? DWGCache.bucket(forPackage: packageDir) : nil
 
-        var index = PackageLoader.drawingIndex(in: packageDir, recursive: deepPackage)
+        // Finder grants access to the selected file, not necessarily its
+        // parent folder. Avoid triggering a folder-access prompt for drawings
+        // that have no external references to resolve.
+        var index = deepPackage ? drawingIndexer(packageDir, true) : [:]
         if deepPackage {
             let hasDWGs = mainURL.pathExtension.lowercased() == "dwg"
                 || index.values.contains { $0.pathExtension.lowercased() == "dwg" }
@@ -204,6 +204,10 @@ extension PackageLoader {
         }
         try checkCancelled()
 
+        if !deepPackage, parsed.blocks.values.contains(where: { $0.isXref && $0.entityCount == 0 }) {
+            index = drawingIndexer(packageDir, false)
+        }
+
         var filesLoaded = 0
         var convertedCache: [String: URL] = [:]
         var capped = false
@@ -217,6 +221,7 @@ extension PackageLoader {
         }
         parsed.xrefMergeCapped = capped
         progress?(1.0)
+        parsed.resourceDirectories.insert(packageDir, at: 0)
         return parsed
     }
 
@@ -450,6 +455,7 @@ extension PackageLoader {
             if let hostId = host.layerIdByName[depName] {
                 let mapped = ltMap[Int16(subLayer.linetypeId)] ?? 0
                 host.layers[Int(hostId)].linetypeId = Int(max(mapped, 0))
+                host.layers[Int(hostId)].lineweight = subLayer.lineweight
             }
         }
 
@@ -495,6 +501,23 @@ extension PackageLoader {
         for (subName, _) in sub.blocks.sorted(by: { $0.key < $1.key }) {
             guard blockNameMap[subName] != nil else { continue }
             newBlockIndex[subName] = nextFreeBlockIndex(host, reserving: newBlockIndex.count)
+        }
+
+        // Image-definition handles are scoped to their source DXF, just like
+        // entity handles. Remap them once per xref instead of accidentally
+        // showing a host image with the same numeric handle.
+        var imageDefinitions: [UInt64: UInt64] = [:]
+        if !sub.objects.imageDefs.isEmpty {
+            let graph = DXFStructuralWriter.buildHandleGraph(parsed: host, store: hostStore, version: .r2018)
+            for definition in sub.objects.imageDefs.values {
+                let handle = graph.allocator.allocate()
+                var copy = definition
+                copy.handle = handle; copy.ownerHandle = 0
+                copy.fileName = SheetRenderSupport.resourceURL(definition.fileName, directories: sub.resourceDirectories)?.path ?? definition.fileName
+                copy.rawPairs = []
+                host.objects.imageDefs[handle] = copy
+                imageDefinitions[definition.handle] = handle
+            }
         }
 
         // Built ONCE per sub-store (O(n) over this xref file's own entity
@@ -546,6 +569,12 @@ extension PackageLoader {
             guard let newId = hostStore.appendCopy(of: id, from: subStore,
                                                    remapLayer: remapLayer, remapLinetype: remapLinetype,
                                                    remapBlockName: remapBlockName, owner: owner) else { return nil }
+            if let header = hostStore.header(newId), header.type == .image {
+                let index = Int(header.payload)
+                hostStore.images[index].imageDefHandle = imageDefinitions[hostStore.images[index].imageDefHandle] ?? 0
+                // A source IMAGEDEF_REACTOR pointer cannot refer into the host.
+                hostStore.residualPairs[newId.raw]?.pairs.removeAll { $0.code == 360 }
+            }
             // O(1) lookup; absent key == no children (the overwhelmingly
             // common case — plain LINEs etc. never have any).
             if let kids = subChildrenByParent[id.raw] {

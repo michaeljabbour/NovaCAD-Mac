@@ -1120,13 +1120,9 @@ final class RoundTripTests: XCTestCase {
         transplant(doc, into: parsed)
 
         let reparsed = try writeAndReparse(parsed)
-        // VIEWPORT is in EntityStoreParser's discard list (see that file's
-        // ATTDEF/VIEWPORT/... "nothing useful to draw" comment) — it is
-        // NEVER retained on re-parse. This is a PRE-EXISTING, out-of-scope
-        // parser limitation, not a writer bug: the assertion here is
-        // deliberately just "the write completes and the rest of the file
-        // still parses cleanly", not "the VIEWPORT itself survives".
-        XCTAssertEqual(reparsed.store.headers.filter { !$0.flags.contains(.deleted) }.count, 0)
+        XCTAssertEqual(reparsed.store.viewports.count, 1)
+        XCTAssertEqual(reparsed.store.viewports[0].widthPaper, 200)
+        XCTAssertEqual(reparsed.store.viewports[0].viewHeight, 500)
     }
 
     /// Regression test (SHOULD-FIX item 7): `writeViewport` used to hardcode
@@ -1186,12 +1182,9 @@ final class RoundTripTests: XCTestCase {
         transplant(doc, into: parsed)
 
         let reparsedR2000 = try writeAndReparse(parsed, version: .r2000)
-        // IMAGE isn't in EntityStoreParser's typed-entity switch at all
-        // (also in its discard list) — same pre-existing parser limitation
-        // as VIEWPORT above: the WRITE succeeds (verified by inspecting the
-        // raw text below), but re-parsing this codebase's own output can't
-        // observe the IMAGE entity coming back, only that nothing else broke.
-        XCTAssertEqual(reparsedR2000.store.headers.filter { !$0.flags.contains(.deleted) }.count, 0)
+        XCTAssertEqual(reparsedR2000.store.images.count, 1)
+        XCTAssertEqual(reparsedR2000.store.images[0].sizePxWidth, doc.store.images[0].sizePxWidth)
+        XCTAssertEqual(reparsedR2000.store.images[0].imageDefHandle, doc.store.images[0].imageDefHandle)
 
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("roundtrip-image-\(UUID().uuidString).dxf")
         defer { try? FileManager.default.removeItem(at: tmp) }

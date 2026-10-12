@@ -93,7 +93,10 @@ public enum PackageLoader {
         }
         progress?(0.02)
 
-        var index = drawingIndex(in: packageDir, recursive: deepPackage)
+        // A standalone drawing only needs its siblings when it contains
+        // unresolved xrefs. Folder enumeration can require separate macOS
+        // permission even when Finder already granted access to the file.
+        var index = deepPackage ? drawingIndex(in: packageDir, recursive: true) : [:]
         if deepPackage {
             let hasDWGs = mainURL.pathExtension.lowercased() == "dwg"
                 || index.values.contains { $0.pathExtension.lowercased() == "dwg" }
@@ -119,6 +122,10 @@ public enum PackageLoader {
 
         var raw = try DXFParser.scanRaw(url: mainURL) { p in
             progress?(0.08 + p * 0.5)
+        }
+
+        if !deepPackage, raw.blocks.values.contains(where: { $0.isXref && $0.entities.isEmpty }) {
+            index = drawingIndex(in: packageDir, recursive: false)
         }
 
         var filesLoaded = 0

@@ -67,10 +67,15 @@ struct LayersPanel: View {
     /// layer, including ones an edit created that the panel/search couldn't
     /// even show you until `liveLayerIds` fixed that.
     let onDeleteLayer: (Int) -> Void
+    var onZoomToLayer: (Int) -> Void = { _ in }
+    @AppStorage("layersInCurrentSheetOnly") private var currentSheetOnly = true
+    var sheetUsage: [Int: LayerUsage] = [:]
 
     @State private var isAddingLayer = false
     @State private var newLayerName = ""
     @State private var xrefSearch = ""
+    private let englishNames = true
+    @State private var isolation = LayerIsolationState()
     /// The layer whose "Select Color" dialog is currently presented (its
     /// `DXFLayer.id`), or nil when no color picker is open. `Identifiable`
     /// wrapper so `.sheet(item:)` works directly off this optional int.
@@ -84,7 +89,7 @@ struct LayersPanel: View {
     // Both panes share the same multi-select convention, mirroring macOS
     // Finder/tree-multiselect behavior:
     //   - Plain click on a row:  replaces panel selection with just that
-    //     row, AND selects its objects on canvas.
+    //     row. Layer object selection is an explicit context-menu action.
     //   - ⌘-click:               toggles that row in/out of the panel
     //     multi-selection (no canvas select).  Retains the anchor used by
     //     Shift-click below — if the user ⌘-clicks row A, then later
@@ -108,11 +113,15 @@ struct LayersPanel: View {
     var body: some View {
         VStack(spacing: 0) {
             if let doc = document {
-                VSplitView {
-                    xrefsPane(doc: doc)
-                        .frame(minHeight: 120, idealHeight: 220)
+                if doc.xrefs.isEmpty {
                     layersPane(doc: doc)
-                        .frame(minHeight: 200)
+                } else {
+                    VSplitView {
+                        xrefsPane(doc: doc)
+                            .frame(minHeight: 100, idealHeight: 160)
+                        layersPane(doc: doc)
+                            .frame(minHeight: 250)
+                    }
                 }
             } else {
                 VStack(spacing: 8) {
@@ -124,6 +133,10 @@ struct LayersPanel: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+        }
+        .onChange(of: currentSourceURL) { _, _ in
+            selectedLayerIds = []
+            isolation = LayerIsolationState()
         }
     }
 
@@ -330,7 +343,8 @@ struct LayersPanel: View {
                 if let liveLayerIds, liveLayerIds.contains(Int32($0.id)) { return true }
                 return $0.entityCount > 0 || visibility.sessionCreatedLayerIds.contains($0.id)
             }
-            .filter { filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter) }
+            .filter { !currentSheetOnly || sheetUsage[$0.id] != nil || visibility.sessionCreatedLayerIds.contains($0.id) }
+            .filter { LayerDisplayName.matches($0.name, search: filter) }
             .filter { layer in
                 // Omit layers belonging to a toggled-off xref.
                 !hiddenXrefs.contains { $0.owns(layerNamed: layer.name) }
@@ -382,12 +396,14 @@ struct LayersPanel: View {
                 .buttonStyle(.borderless)
                 .foregroundColor(.accentColor)
                 .help("New Layer…")
-                Button("All On") { visibility.hiddenLayerIds = [] }
+                Button("All On") {
+                    visibility.hiddenLayerIds = []
+                    isolation = LayerIsolationState()
+                }
                     .buttonStyle(.plain).font(.caption)
                     .foregroundColor(.accentColor)
                 Button("All Off") {
-                    visibility.hiddenLayerIds =
-                        Set(doc.layers.filter { $0.entityCount > 0 }.map(\.id))
+                    visibility.hiddenLayerIds = Set(doc.layers.map(\.id))
                 }
                 .buttonStyle(.plain).font(.caption)
                 .foregroundColor(.accentColor)
@@ -399,6 +415,16 @@ struct LayersPanel: View {
             SearchField(text: $layerSearch, prompt: "Search layers")
                 .padding(.horizontal, 10)
                 .padding(.bottom, 6)
+
+            Toggle("Only layers on this \(space == .paper ? "sheet" : "model")", isOn: $currentSheetOnly)
+                .font(.caption).toggleStyle(.checkbox)
+                .padding(.horizontal, 10).padding(.bottom, 6)
+            Text("\(sheetUsage.count) on this \(space == .paper ? "sheet" : "model") · \(liveLayerIds?.count ?? doc.layers.filter { $0.entityCount > 0 }.count) used in file")
+                .font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 10)
+            if let markup = doc.layers.first(where: { $0.name == "NOVACAD-MARKUP" }), sheetUsage[markup.id] == nil {
+                Text("Markup layer has no objects here").font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 10)
+            }
+            layerActions(doc: doc)
 
             if isAddingLayer {
                 HStack(spacing: 6) {
@@ -416,34 +442,69 @@ struct LayersPanel: View {
                 .padding(.bottom, 6)
             }
 
-            List {
-                if !grouped.host.isEmpty {
-                    Section {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 2) {
+                    if grouped.xrefGroups.isEmpty {
                         ForEach(grouped.host) { layer in layerRow(layer) }
-                    } header: {
-                        Text(grouped.xrefGroups.isEmpty ? "" : "Host layers")
+                    } else if !grouped.host.isEmpty {
+                        Section {
+                            ForEach(grouped.host) { layer in layerRow(layer) }
+                        } header: {
+                            Text(grouped.xrefGroups.isEmpty ? "" : "Host layers")
+                        }
+                    }
+                    ForEach(grouped.xrefGroups, id: \.0.id) { pair in
+                        Section {
+                            ForEach(pair.1) { layer in layerRow(layer) }
+                        } header: {
+                            Label(pair.0.blockName, systemImage: "link")
+                                .font(.caption)
+                        }
                     }
                 }
-                ForEach(grouped.xrefGroups, id: \.0.id) { pair in
-                    Section {
-                        ForEach(pair.1) { layer in layerRow(layer) }
-                    } header: {
-                        Label(pair.0.blockName, systemImage: "link")
-                            .font(.caption)
-                    }
-                }
+                .padding(8)
             }
-            .listStyle(.sidebar)
             // Prune selected layer ids that filtered out (e.g. the user
             // types a search that hides them, or the layer was deleted).
             .onChange(of: visibleLayers.map(\.id)) { _, stillPresent in
                 selectedLayerIds.formIntersection(Set(stillPresent))
             }
 
-            clayerPicker(doc: doc)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
         }
+    }
+
+    private func layerActions(doc: DXFDocument) -> some View {
+        let targets = selectedLayerIds.isEmpty ? Set(visibleLayers.map(\.id)) : selectedLayerIds
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(selectedLayerIds.isEmpty ? "\(targets.count) matching layers" : "\(targets.count) selected \(targets.count == 1 ? "layer" : "layers")")
+                    .font(.caption).foregroundColor(.secondary)
+                Spacer()
+                if !selectedLayerIds.isEmpty {
+                    Button("Clear selection") { selectedLayerIds = [] }
+                        .buttonStyle(.plain).font(.caption)
+                }
+            }
+            HStack(spacing: 6) {
+                Button("Show \(targets.count)") { visibility.hiddenLayerIds.subtract(targets) }
+                    .disabled(targets.isEmpty)
+                Button("Hide \(targets.count)") { visibility.hiddenLayerIds.formUnion(targets) }
+                    .disabled(targets.isEmpty)
+                Button("Isolate \(targets.count)") {
+                    isolation.isolate(targets, allLayerIDs: Set(doc.layers.map(\.id)),
+                                      hidden: &visibility.hiddenLayerIds)
+                }
+                .disabled(targets.isEmpty)
+                Spacer(minLength: 0)
+                Button("Restore") { isolation.restore(hidden: &visibility.hiddenLayerIds) }
+                    .disabled(isolation.previousHidden == nil)
+                    .help("Restore the layer visibility from before isolation")
+            }
+            .controlSize(.small)
+            .help("Apply to selected layers, or to all search results when nothing is selected")
+        }
+        .padding(.horizontal, 10)
+        .padding(.bottom, 8)
     }
 
     private func layerRow(_ layer: DXFLayer) -> some View {
@@ -457,11 +518,12 @@ struct LayersPanel: View {
             } label: {
                 Image(systemName: isOn ? "eye.fill" : "eye.slash")
                     .foregroundColor(isOn ? .accentColor : .secondary)
-                    .frame(width: 16)
+                    .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help(isOn ? "Hide layer (freeze)" : "Show layer (thaw)")
+            .accessibilityLabel("\(isOn ? "Hide" : "Show") \(displayName(layer))")
 
             Button {
                 if isLocked { visibility.lockedLayerIds.remove(layer.id) }
@@ -469,11 +531,12 @@ struct LayersPanel: View {
             } label: {
                 Image(systemName: isLocked ? "lock.fill" : "lock.open")
                     .foregroundColor(isLocked ? .orange : .secondary.opacity(0.5))
-                    .frame(width: 14)
+                    .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help(isLocked ? "Unlock layer (allow selection)" : "Lock layer (prevent selection)")
+            .accessibilityLabel("\(isLocked ? "Unlock" : "Lock") \(displayName(layer))")
 
             Button {
                 colorPickerLayerId = IdentifiableInt(layer.id)
@@ -486,50 +549,73 @@ struct LayersPanel: View {
                 // separate transparency indicator.
                 ZStack {
                     if layer.transparency > 0 { rowCheckerboard }
-                    RoundedRectangle(cornerRadius: 3)
+                    Circle()
                         .fill(Color(rgb: layer.color.swatchDisplayRGB(darkBackground: colorScheme == .dark)).opacity(1 - layer.transparency / 100))
                 }
                 .frame(width: 14, height: 14)
-                .clipShape(RoundedRectangle(cornerRadius: 3))
-                .overlay(RoundedRectangle(cornerRadius: 3)
+                .clipShape(Circle())
+                .overlay(Circle()
                     .strokeBorder(Color.primary.opacity(0.2), lineWidth: 0.5))
+                .frame(width: 24, height: 24).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Color for \(displayName(layer))")
             .help(layer.transparency > 0
                   ? "\(Int(layer.transparency.rounded()))% transparent — click for Layer Settings"
                   : "Click for Layer Settings (color, transparency)")
 
-            Text(displayName(layer))
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .textSelection(.enabled)
-                .foregroundColor(isOn ? (isLocked ? .secondary : .primary) : .secondary)
-                .help(layer.name)
-
-            Spacer()
-            Text("\(layer.entityCount)")
+            VStack(alignment: .leading, spacing: 3) {
+                Text(displayName(layer))
+                    .font(.callout)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .foregroundColor(isOn ? (isLocked ? .secondary : .primary) : .secondary)
+                HStack(spacing: 6) {
+                    Spacer(minLength: 2)
+                    Text("\((sheetUsage[layer.id]?.count ?? 0).formatted()) objects").fixedSize()
+                }
                 .font(.caption2)
                 .foregroundColor(.secondary)
-                .monospacedDigit()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .help("\(layer.name)\nClick to select a layer; ⌘-click or Shift-click for multiple layers. Double-click to isolate.")
         }
         .padding(.leading, 4)
-        .background(isRowSelected ? Color.accentColor.opacity(0.12) : Color.clear)
+        .padding(.vertical, 4)
+        .background(isRowSelected ? Color.accentColor.opacity(0.30) : Color.clear)
+        .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(isRowSelected ? Color.accentColor : .clear, lineWidth: 1.5))
         .cornerRadius(4)
         .contentShape(Rectangle())
-        .onTapGesture {
-            handleLayerClick(layer)
-        }
-        .onTapGesture(count: 2) {
-            // Double-click: isolate this layer (or restore all if already isolated).
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(displayName(layer))
+        .accessibilityValue(isRowSelected ? "Selected" : "Not selected")
+        .accessibilityAddTraits(isRowSelected ? .isSelected : [])
+        .accessibilityAction { handleLayerClick(layer) }
+        .accessibilityAction(named: "Select layer") { handleLayerClick(layer) }
+        .simultaneousGesture(TapGesture(count: 1).onEnded { handleLayerClick(layer) })
+        .simultaneousGesture(TapGesture(count: 2).onEnded {
+            // Double-click: isolate this layer, preserving the previous view.
             guard let doc = document else { return }
-            let others = Set(doc.layers.filter { $0.entityCount > 0 && $0.id != layer.id }.map(\.id))
-            if visibility.hiddenLayerIds == others {
-                visibility.hiddenLayerIds = []
+            let others = Set(doc.layers.map(\.id)).subtracting([layer.id])
+            if visibility.hiddenLayerIds == others, isolation.previousHidden != nil {
+                isolation.restore(hidden: &visibility.hiddenLayerIds)
             } else {
-                visibility.hiddenLayerIds = others
+                isolation.isolate([layer.id], allLayerIDs: Set(doc.layers.map(\.id)),
+                                  hidden: &visibility.hiddenLayerIds)
             }
-        }
+        })
         .contextMenu {
+            Button("Isolate Layer") {
+                guard let doc = document else { return }
+                isolation.isolate([layer.id], allLayerIDs: Set(doc.layers.map(\.id)),
+                                  hidden: &visibility.hiddenLayerIds)
+            }
+            Button("Zoom to Layer") { onZoomToLayer(layer.id) }
+                .disabled(sheetUsage[layer.id] == nil)
+            Button("Select Objects on Layer") {
+                if let doc = document { selectLayer(layerIds: [layer.id], doc: doc) }
+            }
+            Divider()
             Button("Layer Settings…") { colorPickerLayerId = IdentifiableInt(layer.id) }
             Menu("Shade Layer") {
                 Button("Solid Fill") { onShadeLayer(layer.id, .solid) }
@@ -603,6 +689,11 @@ struct LayersPanel: View {
     /// Under an xref group, strip the `XREFNAME|` prefix so the row shows just
     /// the layer's own name (the group header already names the xref).
     private func displayName(_ layer: DXFLayer) -> String {
+        let original = originalDisplayName(layer)
+        return englishNames ? LayerDisplayName.englishAlias(for: original) ?? original : original
+    }
+
+    private func originalDisplayName(_ layer: DXFLayer) -> String {
         guard let doc = document else { return layer.name }
         // Longest prefix first so a nested xref's layer strips PARENT|CHILD|
         // rather than only the shorter PARENT| a parent xref would match.
@@ -626,7 +717,7 @@ struct LayersPanel: View {
                 set: { currentProperties.layerName = $0 }
             )) {
                 ForEach(names, id: \.self) { name in
-                    Text(name).tag(name)
+                    Text(englishNames ? LayerDisplayName.englishAlias(for: name) ?? name : name).tag(name)
                 }
             }
             .labelsHidden()
@@ -725,9 +816,6 @@ struct LayersPanel: View {
         } else {
             selectedLayerIds = [layer.id]
             lastLayerAnchor = ordinal
-            if let doc = document {
-                selectLayer(layerIds: [layer.id], doc: doc)
-            }
         }
     }
 

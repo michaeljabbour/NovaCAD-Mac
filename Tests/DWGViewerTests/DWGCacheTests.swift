@@ -25,6 +25,45 @@ final class DWGCacheTests: XCTestCase {
         return url
     }
 
+    func testSubsecondChangeInvalidatesCacheEvenWithSameSize() throws {
+        let src = try writeFile("rapid.dwg", "first")
+        _ = try writeFile("rapid.dxf", "cached geometry")
+        let before = try XCTUnwrap(DWGCache.stat(src))
+        let manifest = ["rapid.dwg": DWGCache.Entry(size: before.size, mtime: before.mtime,
+            dxfRelPath: "rapid.dxf", converter: "test")]
+        try Data("later".utf8).write(to: src)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: before.mtime + 0.25)],
+                                              ofItemAtPath: src.path)
+        XCTAssertFalse(DWGCache.isFresh(source: src, relativeKey: "rapid.dwg", bucket: tmp,
+                                        manifest: manifest, converter: "test"))
+    }
+
+    func testStandaloneDWGLoadsCacheWithoutLaunchingConverterOrScanningFolder() throws {
+        let originalPreference = UserDefaults.standard.object(forKey: "dwgCacheEnabled")
+        UserDefaults.standard.set(true, forKey: "dwgCacheEnabled")
+        defer {
+            if let originalPreference { UserDefaults.standard.set(originalPreference, forKey: "dwgCacheEnabled") }
+            else { UserDefaults.standard.removeObject(forKey: "dwgCacheEnabled") }
+        }
+        // Deliberately not a real DWG: this can only succeed through the cache.
+        let src = try writeFile("standalone.dwg", "dummy source")
+        let bucket = DWGCache.bucket(forPackage: tmp)
+        defer { try? FileManager.default.removeItem(at: bucket) }
+        let converted = bucket.appendingPathComponent("cached.dxf")
+        try FileManager.default.copyItem(at: TestFixtures.url("basic_entities.dxf"), to: converted)
+        let st = try XCTUnwrap(DWGCache.stat(src))
+        let key = "abs:" + DWGCache.sha256Hex(src.standardizedFileURL.path)
+        DWGCache.saveManifest([key: .init(size: st.size, mtime: st.mtime, dxfRelPath: "cached.dxf",
+                                         converter: DWGCache.currentConverterId())], in: bucket)
+        let parsed = try PackageLoader.loadIntoStore(url: src, drawingIndexer: { _, _ in
+            XCTFail("A standalone drawing with no xrefs must not scan its folder")
+            return [:]
+        })
+        XCTAssertGreaterThan(parsed.store.count, 0)
+        XCTAssertTrue(parsed.resourceDirectories.contains(tmp))
+        XCTAssertEqual(try String(contentsOf: src, encoding: .utf8), "dummy source")
+    }
+
     func testManifestRoundTrips() throws {
         let bucket = tmp.appendingPathComponent("bucket", isDirectory: true)
         try FileManager.default.createDirectory(at: bucket, withIntermediateDirectories: true)

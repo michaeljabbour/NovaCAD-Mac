@@ -27,7 +27,7 @@ extension DXFStructuralWriter {
 
         for (name, b) in parsed.blocks.sorted(by: { $0.key < $1.key }) {
             let upper = name.uppercased()
-            guard !upper.hasPrefix("*MODEL_SPACE"), upper != "$MODEL_SPACE", !upper.hasPrefix("*PAPER_SPACE") else { continue }
+            guard upper != "*MODEL_SPACE", upper != "$MODEL_SPACE", upper != "*PAPER_SPACE" else { continue }
             writeUserBlock(name: name, block: b, parsed: parsed, store: store, version: version,
                           graph: graph, out: out, warnings: &warnings)
         }
@@ -112,6 +112,11 @@ extension DXFStructuralWriter {
     private static func writeSpaceBlock(name: String, parsed: EditableParsedDocument, store: EntityStore,
                                         version: DXFVersion, graph: HandleGraph,
                                         out: DXFOutputStream, warnings: inout [WriteWarning]) {
+        if let block = parsed.blocks.first(where: { $0.key.caseInsensitiveCompare(name) == .orderedSame })?.value {
+            writeUserBlock(name: name, block: block, parsed: parsed, store: store,
+                           version: version, graph: graph, out: out, warnings: &warnings)
+            return
+        }
         blockCommon(name: name, base: CGPointLike(x: 0, y: 0, z: 0), flags: 0, xrefPath: "",
                    parsed: parsed, version: version, graph: graph, out: out)
         blockEnd(name: name, version: version, graph: graph, out: out)
@@ -201,7 +206,10 @@ extension DXFStructuralWriter {
             guard !h.flags.contains(.deleted) else { continue }
             guard ownerMatches(h.owner, owner) else { continue }
             let id = EntityID(raw: Int32(i))
-            writeOneEntityAndChildren(id: id, h: h, ownerHandle: ownerHandle, parsed: parsed, store: store,
+            let sheetOwner = h.owner.isPaper
+                ? store.residualPairs[id.raw]?.pairs.first(where: { $0.code == 330 })
+                    .flatMap { UInt64($0.value, radix: 16) } : nil
+            writeOneEntityAndChildren(id: id, h: h, ownerHandle: sheetOwner ?? ownerHandle, parsed: parsed, store: store,
                                      version: version, graph: graph, out: out, warnings: &warnings,
                                      viewportCounter: &viewportCounter)
         }
