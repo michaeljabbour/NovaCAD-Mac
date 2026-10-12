@@ -224,6 +224,14 @@ final class RegenCoordinator {
     /// is nearly empty by design — see the plan's load-bearing note), so
     /// this table is what makes editing that file's actual geometry cheap.
     private var orphanRootByBlockIndex: [Int32: (base: CGPoint, xrefId: Int16)]? = nil
+    private var navigationSheetsCache: (UInt64, Int, [PaperLayout])?
+    var navigationPaperLayouts: [PaperLayout] {
+        let key = parsed.document.revision
+        if let cached = navigationSheetsCache, cached.0 == key, cached.1 == parsed.store.count { return cached.2 }
+        let sheets = PaperLayout.navigableSheets(in: parsed)
+        navigationSheetsCache = (key, parsed.store.count, sheets)
+        return sheets
+    }
 
     /// Whether `blockIndex` is an ORPHAN-ROOT block (see `orphanRootTable()`'s
     /// own doc comment) — exposed (unlike `orphanRootTable()` itself, which
@@ -256,9 +264,11 @@ final class RegenCoordinator {
             xrefIdByBlock[name] = xrefCount
             xrefCount += 1
         }
+        let recoverOrphanBlocks = Regenerator.recoversOrphanBlocks(in: parsed)
         var table: [Int32: (base: CGPoint, xrefId: Int16)] = [:]
         for (name, b) in parsed.blocks {
-            guard b.entityCount > 0, insertCounts[name] == nil, !b.isXrefDependent else { continue }
+            guard b.entityCount > 0, insertCounts[name] == nil, !b.isXrefDependent,
+                  recoverOrphanBlocks || b.isXref else { continue }
             let upper = name.uppercased()
             guard !upper.hasPrefix("*"), !upper.hasPrefix("$") else { continue }
             table[b.blockIndex] = (base: b.base, xrefId: xrefIdByBlock[name] ?? -1)
@@ -312,8 +322,10 @@ final class RegenCoordinator {
                             xrefProgress: ((PackageLoader.XrefProgress) -> Void)? = nil,
                             progress: ((Double) -> Void)? = nil) throws -> RegenCoordinator {
         let parsed = try PackageLoader.loadIntoStore(url: url, isCancelled: isCancelled,
-                                                     xrefProgress: xrefProgress) { p in progress?(p * 0.85) }
+                                                    xrefProgress: xrefProgress,
+                                                    progress: { p in progress?(p * 0.85) })
         MarkupStore.ensureMarkupLayer(in: parsed)
+        parsed.activePaperLayoutID = PaperLayout.navigableSheets(in: parsed).first?.id
         let doc = Regenerator.build(from: parsed, parseSeconds: 0) { p in progress?(0.85 + p * 0.15) }
         return RegenCoordinator(parsed: parsed, document: doc)
     }
@@ -373,6 +385,29 @@ final class RegenCoordinator {
     func apply(_ ops: [Transaction.Op]) -> RegenDelta {
         revision += 1
         guard !ops.isEmpty else { return RegenDelta(revision: revision) }
+
+        if let sheet = parsed.activePaperLayoutID {
+            // New paper-space geometry belongs to the current sheet. Keep
+            // this metadata with the entity so undo/copy/checkpoints retain it.
+            for op in ops {
+                guard case .add(let id) = op, parsed.store.header(id)?.owner.isPaper == true else { continue }
+                var blob = parsed.store.residualPairs[id.raw] ?? RawPairBlob(pairs: [])
+                if !blob.pairs.contains(where: { $0.code == 330 || $0.code == 410 }) {
+                    blob.pairs.append((330, String(sheet, radix: 16, uppercase: true)))
+                    parsed.store.residualPairs[id.raw] = blob
+                    parsed.store.setHeader(id) { $0.flags.insert(.hasResidual) }
+                }
+            }
+            // Incremental patches predate individual sheets. Rebuild through
+            // the sheet-aware root walk rather than emitting hidden sheets.
+            fullRebuild()
+            return RegenDelta(fullRebuild: true, revision: revision)
+        }
+
+        if !parsed.store.images.isEmpty || !parsed.store.viewports.isEmpty {
+            fullRebuild()
+            return RegenDelta(fullRebuild: true, revision: revision)
+        }
 
         // `document.layers` is an IMMUTABLE `let` array on `DXFDocument` —
         // there is no way to append a single new entry to it short of
@@ -1162,6 +1197,14 @@ final class RegenCoordinator {
 
     // MARK: - Compaction
 
+    /// Switch the displayed sheet without removing any stored geometry.
+    func selectPaperLayout(_ id: UInt64) {
+        guard parsed.activePaperLayoutID != id, parsed.paperLayouts.contains(where: { $0.id == id }) else { return }
+        parsed.activePaperLayoutID = id
+        revision += 1
+        fullRebuild()
+    }
+
     /// Throws away all delta/tombstone bookkeeping and does a full
     /// `Regenerator.build` rebuild, then swaps it in. Selection is untouched
     /// by this call (it lives in `Set<EntityID>` on the caller's side, per
@@ -1182,6 +1225,7 @@ final class RegenCoordinator {
     /// from one yet outside of tests written that way.
     func fullRebuild() {
         let newDoc = Regenerator.build(from: parsed, parseSeconds: document.stats.parseSeconds) { _ in }
+        newDoc.sourceDXFURL = document.sourceDXFURL
         document = newDoc
         entityLocator.removeAll()
         groupReverseIndex.removeAll()   // old groups' indices/contents no longer exist

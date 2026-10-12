@@ -251,7 +251,7 @@ enum EntityRecordWriter {
     /// original handle — see each such function's own call site).
     private static func writeExtras(id: EntityID, store: EntityStore, out: DXFOutputStream) {
         if let residual = store.residualPairs[id.raw] {
-            for p in residual.pairs { out.pair(Int(p.code), p.value) }
+            for p in residual.pairs where p.code != 330 { out.pair(Int(p.code), p.value) }
         }
         writeXData(id: id, store: store, out: out)
     }
@@ -932,22 +932,21 @@ enum EntityRecordWriter {
             return
         }
         let p = store.images[Int(h.payload)]
-        common("IMAGE", "AcDbImage", h, handle, ownerHandle, layerName, linetypeName, version, out)
+        common("IMAGE", "AcDbRasterImage", h, handle, ownerHandle, layerName, linetypeName, version, out)
         out.pair(90, 0)
         out.pair(10, p.origin.x); out.pair(20, p.origin.y); out.pair(30, p.origin.z)
         out.pair(11, p.uVector.x); out.pair(21, p.uVector.y); out.pair(31, p.uVector.z)
         out.pair(12, p.vVector.x); out.pair(22, p.vVector.y); out.pair(32, p.vVector.z)
         out.pair(13, p.sizePxWidth); out.pair(23, p.sizePxHeight)
         if p.imageDefHandle != 0 { out.handlePair(340, p.imageDefHandle) }
-        // KNOWN LIMITATION (accepted, not fixed — see this session's final
-        // report): group 280 hardcoded to 1 ("clipping on") with no actual
-        // boundary polygon data (groups 91/13-23-repeated for the clip
-        // boundary vertices, which `ImagePayload` doesn't retain at all).
-        // Lower severity — IMAGE is already a rare/edge entity type marked
-        // best-effort throughout this writer (see the R14 drop-with-warning
-        // just above, and VIEWPORT/DIMENSION's identical "minimal echo, not
-        // full fidelity" treatment).
-        out.pair(70, 1); out.pair(280, 1); out.pair(281, 50); out.pair(282, 0); out.pair(283, 0); out.pair(360, 0)
+        out.pair(70, p.displayFlags); out.pair(280, p.clipping ? 1 : 0)
+        out.pair(281, p.brightness); out.pair(282, p.contrast); out.pair(283, p.fade)
+        if !p.clipVertices.isEmpty {
+            out.pair(71, p.clipVertices.count == 2 ? 1 : 2)
+            out.pair(91, p.clipVertices.count)
+            for vertex in p.clipVertices { out.pair(14, vertex.x); out.pair(24, vertex.y) }
+        }
+        out.pair(290, p.clipInverted ? 1 : 0)
     }
 
     // MARK: - VIEWPORT
@@ -959,31 +958,15 @@ enum EntityRecordWriter {
         common("VIEWPORT", "AcDbViewport", h, handle, ownerHandle, layerName, linetypeName, version, out)
         out.pair(10, p.centerPaper.x); out.pair(20, p.centerPaper.y); out.pair(30, p.centerPaper.z)
         out.pair(40, p.widthPaper); out.pair(41, p.heightPaper)
-        // Group 69 ("viewport ID"): a per-layout sequential positive
-        // integer, threaded in from the caller's per-space counter (see
-        // `EntityRecordWriter.write`'s doc comment) rather than hardcoded —
-        // a layout with more than one floating viewport used to get
-        // duplicate, spec-violating IDs here. Falls back to 1 if the caller
-        // didn't supply one (viewportID <= 0), so this stays well-formed
-        // even if some future call site forgets to thread it through.
-        out.pair(68, 1); out.pair(69, viewportID > 0 ? viewportID : 1)
+        out.pair(68, Int(p.status)); out.pair(69, p.viewportID > 0 ? p.viewportID : max(1, viewportID))
         out.pair(12, p.viewCenter.x); out.pair(22, p.viewCenter.y)
-        out.pair(13, 0.0); out.pair(23, 0.0)
-        out.pair(14, 1.0); out.pair(24, 1.0)
-        out.pair(15, 1.0); out.pair(25, 1.0)
-        out.pair(16, 0.0); out.pair(26, 0.0); out.pair(36, 1.0)
-        out.pair(17, 0.0); out.pair(27, 0.0); out.pair(37, 0.0)
-        out.pair(42, 50.0)
-        out.pair(43, 0.0); out.pair(44, 0.0)
+        out.pair(16, p.direction.x); out.pair(26, p.direction.y); out.pair(36, p.direction.z)
+        out.pair(17, p.target.x); out.pair(27, p.target.y); out.pair(37, p.target.z)
         out.pair(45, p.viewHeight)
-        out.pair(50, p.twistDeg)
-        out.pair(51, 0.0)
-        out.pair(72, 1000)
-        out.pair(90, Int(p.status))
-        out.pair(281, 0); out.pair(71, 0); out.pair(74, 0)
-        out.pair(110, 0.0); out.pair(120, 0.0); out.pair(130, 0.0)
-        out.pair(111, 1.0); out.pair(121, 0.0); out.pair(131, 0.0)
-        out.pair(112, 0.0); out.pair(122, 1.0); out.pair(132, 0.0)
+        out.pair(51, p.twistDeg)
+        out.pair(90, p.flags)
+        for handle in p.frozenLayerHandles { out.handlePair(331, handle) }
+        if p.clipHandle != 0 { out.handlePair(340, p.clipHandle) }
     }
 
     // MARK: - Degraded curve->polyline tessellation (R12/R13 fallback for ELLIPSE/SPLINE)

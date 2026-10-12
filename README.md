@@ -42,6 +42,24 @@ the synthetic fixtures in `Tests/Fixtures/` — see
 
 <img src="Assets/Marketing/novacad-technical-triptych.png" width="100%" alt="Navigate, measure, and mark up — NovaCAD workflow">
 
+## Workspace ergonomics
+
+The full-width ribbon sits above both the layers sidebar and the drawing.
+It groups labeled tools into **Home**, **Draw**, **Modify**, **Annotate**,
+and **View** tabs. The active tool is highlighted; the chevron collapses the
+ribbon to tabs only for more drawing space (**⌥⌘R** also toggles it).
+Larger primary icons and bordered buttons make tool targets clear. Less-used
+groups collapse into menus when the window narrows. Tabs and collapse state
+are remembered.
+Save, Undo, Redo, Find, and the File menu share the title bar with the drawing
+name; there is no separate app-title row.
+Advanced commands remain under **Home → All tools** and the native menus.
+
+Individual DWGs now use the same persistent conversion cache as drawing
+packages. Reopening an unchanged drawing skips ODA entirely. Fresh conversions
+launch hidden in the background with Qt activation disabled; a converter version
+may still show its own brief splash. The installed ODA application is unchanged.
+
 ## What it is
 
 - A **fast viewer** for DXF (and DWG via a free converter), including xrefs,
@@ -56,7 +74,7 @@ the synthetic fixtures in `Tests/Fixtures/` — see
 ## What it isn't
 
 NovaCAD is not a full AutoCAD replacement and does not try to be: it writes
-DXF (not DWG), has no plot/print pipeline, no LISP, no 3D modeling, and no
+DXF (not DWG), exports sheet PDFs without CTB/STB plot styles, and has no LISP, 3D modeling, or
 cloud service. See [Known limitations](#known-limitations).
 
 ## Requirements
@@ -106,6 +124,8 @@ fewer DWG versions and is less faithful than the ODA converter.
 The install script registers NovaCAD for `.dwg` and `.dxf` files, so you can
 right-click a drawing and choose **Open With → NovaCAD** immediately. DWG
 still requires the separate [converter setup](#dwg-files); DXF opens directly.
+Self-contained drawings open without scanning their parent folder. NovaCAD
+indexes sibling drawings only when it needs to resolve external references.
 
 Prebuilt installers are attached to
 [Releases](https://github.com/ryandirezze/NovaCAD-Mac/releases/latest). The
@@ -128,6 +148,21 @@ which requires a paid Developer ID.
 
 ## Features
 
+### File menu, workspace, and recovery
+
+- **File** is available in the macOS menu bar and inside the window: New Tab,
+  Open/Open Recent, Save/Save As, Reload, PDF export, markup export, and recovery.
+- Drawings remember their last sheet, zoom, and layer visibility by original
+  layer name. **Views → Save View Preset** stores named views for that drawing.
+- **Only layers on this sheet/model** filters the sidebar to the current space.
+  Right-click a layer and choose **Zoom to Layer** to find its geometry.
+- Changed documents get a background recovery copy after three idle seconds,
+  with a 30-second fallback. Closing a tab or quitting also checkpoints edits.
+  **File → Recover Unsaved Drawings** opens a copy; the original is untouched.
+  Recovery copies persist until the recovered drawing is explicitly saved.
+- Save uses an atomic replacement after writing a complete DXF. DWG inputs
+  still require Save As to DXF. Recovery errors appear in the status bar.
+
 ### View & navigate
 
 - Renders LINE, CIRCLE, ARC, LWPOLYLINE (with bulges), POLYLINE (2D/3D,
@@ -146,7 +181,16 @@ which requires a paid Developer ID.
 ### Layers, xrefs & properties
 
 - **Layers panel** — show/hide (freeze/thaw), lock/unlock, color swatches,
-  entity counts, search, isolate on double-click.
+  entity counts, and search in original names or local English aliases for
+  common Russian CAD terms. Select multiple rows to show, hide, or isolate
+  them together; Restore returns to the visibility state before isolation.
+  Common Russian names receive automatic English display aliases in block
+  pickers, properties, and search; originals remain available on hover.
+  There is no language switch on the canvas. Display aliases do not translate
+  or rename the file itself.
+- **Paper sheets** — choose one named layout from the Sheet menu beneath the ribbon,
+  or step through sheets with Previous/Next; other sheets stay separate and are retained when saving.
+  The empty External References panel no longer takes space from the layers.
 - **External References pane** — show/hide each xref, flag unresolved ones,
   attach new xrefs, re-point missing xref paths, and open an xref in a new
   tab (auto-reloads when saved).
@@ -178,6 +222,13 @@ which requires a paid Developer ID.
   (ATTDEF/ATTEDIT).
 
 ### Save & export
+
+- **Export Sheets to PDF** creates one vector page per selected sheet (or Model),
+  with linked raster images, drawing colors, layer/entity lineweights, and current
+  layer visibility. Choose drawing paper sizes or A4/A3/Letter/Tabloid/ARCH D,
+  drawing page setup, 1:1/1:50/1:100, or explicit Fit to page. Actual scales may
+  crop out-of-page content; export reports this. CTB/STB styles are not applied.
+
 
 - **Save (⌘S) / Save As (⇧⌘S)** write the full live document — every
   in-session edit, including modified or deleted original entities — back to
@@ -231,6 +282,37 @@ point and renders it highlighted; `--debug-bounds` prints culling statistics.
 PNG output is rendered at 2× the requested `--size` for crisp README/social
 images. Additional flags (`--exec`, `--compare`, `--roundtrip`, …) exist for
 automation and the project's own verification harnesses.
+
+Export all paper layouts headlessly (add `--layout "Sheet name"` for one):
+
+```sh
+.build/release/NovaCAD --export-pdf sheets.pdf --pdf-fit drawing.dwg
+```
+
+Use `--layout "A-104. Furniture Arrangement"` to render a specific named
+paper sheet. This selects paper space and the editable renderer automatically.
+
+### Workspace navigation and rendering
+
+Search lives above the canvas and frames each match at 28% of the available view,
+with its surroundings visible. Closing search restores the prior view. Each sheet
+and Model space remembers its own zoom and center. Empty layouts (including layouts
+with only the default paper viewport) stay in the file but are omitted from sheet
+counts and Previous/Next navigation.
+
+Units, Quality, Drawing Info, and Issues open beside their buttons inside the
+workspace, above the status bar. Properties and AI Assistant share a single
+sidebar with two tabs; the last selected tab is remembered. Layer visibility,
+lock and color controls, sheet arrows and the ribbon toggle have at least 24-point
+click targets, and layer rows expose a default accessibility selection action.
+
+MTEXT respects its reference width, and Fit Drawing includes full rotated text
+bounds. Paper-only files with empty Model space no longer show unused block
+schedules as overlapping model geometry; the unused definitions remain in the
+file. Legacy orphan-block recovery remains available for model exports and xrefs.
+Mixed coordinate and annotation units are explained in Issues and Units & Format;
+annotation labels never change the measurement scale.
+
 
 ## Xrefs & eTransmit
 
@@ -334,8 +416,18 @@ Requires macOS 15+ and adds no further dependencies.
 ## Known limitations
 
 - Writes **DXF only** — native DWG writing requires the licensed ODA SDK.
-- No plot/print pipeline; no LISP; no 3D modeling or orbit views (2D canvas
-  with a high-performance CoreGraphics pipeline).
+- PDF sheet export is supported; native printer dialogs and CTB/STB plot styles
+  are not. No LISP, 3D modeling, or orbit views.
+- Paper viewports support top-down orthographic 2D views, scale/twist/target,
+  frozen layers, and rectangular or straight-polyline/circle clipping. Viewport
+  model content is display-only in Paper; switch to Model to edit it. Perspective,
+  3D/depth clipping, and curved-polyline clipping are reported as unsupported.
+- Local linked raster images support placement, clipping, and fade. Missing images
+  have placeholders and can be located through **Issues → Locate Images Folder**.
+  Brightness/contrast overrides are reported but not applied. WIPEOUT and OLE
+  objects remain unsupported and are now reported in the Issues panel.
+- Sheet layer counts refer to rendered geometry. Viewport counts use intersections
+  with the viewport rectangle; nonrectangular clipping can make these approximate.
 - `Export Markup as DXF` / `Save Copy with Markup` cover the primitive markup
   set (see the note under Save & export).
 - The AI Assistant is optional and requires your own provider/credentials;

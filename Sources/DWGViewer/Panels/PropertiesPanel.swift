@@ -9,6 +9,7 @@ import SwiftUI
 /// private state directly. Shown when the current selection is NOT markup
 /// (see `MarkupPropertiesPanel` below for the editable markup counterpart).
 struct PropertiesPanel: View {
+    private let englishNames = true
     @ObservedObject var session: DocumentSession
     let document: DXFDocument?
     let selectionCount: Int
@@ -20,6 +21,7 @@ struct PropertiesPanel: View {
     /// a field can be typed straight back into it. Defaults so existing call
     /// sites/tests that don't care about the block editor still compile.
     var format: MeasureFormat = MeasureFormat()
+    var embedded = false
 
     @State private var showingColorPicker = false
     /// Drives the theme-aware color swatch — `.foreground` (ACI 7) must read
@@ -215,13 +217,13 @@ struct PropertiesPanel: View {
                 Spacer()
                 Text(selectionCount == 1 ? "1 object" : "\(selectionCount) objects")
                     .font(.caption).foregroundColor(.secondary)
-                Button {
+                if !embedded { Button {
                     propertiesMinimized = true
                 } label: {
                     Image(systemName: "rectangle.rightthird.inset.filled")
                 }
                 .buttonStyle(.plain)
-                .help("Minimize properties")
+                .help("Minimize properties") }
                 Button {
                     selection = []
                 } label: { Image(systemName: "xmark.circle.fill") }
@@ -244,7 +246,7 @@ struct PropertiesPanel: View {
                                 Text(EntityProperty.variesValue).tag(EntityProperty.variesValue)
                             }
                             ForEach(layerNames, id: \.self) { name in
-                                Text(name).tag(name)
+                                Text(LayerDisplayName.display(name, inEnglish: englishNames)).tag(name)
                             }
                         }
                         .labelsHidden()
@@ -299,7 +301,7 @@ struct PropertiesPanel: View {
                             Text(prop.name)
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                            Text(prop.value)
+                            Text(LayerDisplayName.display(prop.value, inEnglish: englishNames))
                                 .font(.callout)
                                 .foregroundColor(prop.value == EntityProperty.variesValue
                                                  ? .orange : .primary)
@@ -314,7 +316,7 @@ struct PropertiesPanel: View {
             }
             Spacer(minLength: 0)
         }
-        .frame(width: 250)
+        .frame(width: embedded ? 300 : 250)
         .background(Color(nsColor: .windowBackgroundColor))
         .overlay(Rectangle().frame(width: 1).foregroundColor(.black.opacity(0.2)),
                  alignment: .leading)
@@ -641,6 +643,7 @@ struct MarkupPropertiesPanel: View {
     let onStartMove: () -> Void
     let onStartModify: (ModifyCommand) -> Void
     let onDeleteSelectedMarkup: () -> Void
+    var panelWidth: CGFloat = 250
 
     private var regen: RegenCoordinator? { session.regen }
 
@@ -829,7 +832,7 @@ struct MarkupPropertiesPanel: View {
             }
             Spacer(minLength: 0)
         }
-        .frame(width: 250)
+        .frame(width: panelWidth)
         .background(Color(nsColor: .windowBackgroundColor))
         .overlay(Rectangle().frame(width: 1).foregroundColor(.black.opacity(0.2)),
                  alignment: .leading)

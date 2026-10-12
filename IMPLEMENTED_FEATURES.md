@@ -3,7 +3,20 @@
 current_status = [X]
 
 All features listed below have been verified as implemented in the codebase.
-No known regressions or broken features found.
+Known rendering/export limits are documented in README.md.
+
+## Workspace Ergonomics
+[X] **Tabbed ribbon** — full-width Home/Draw/Modify/Annotate/View groups, defined button targets and larger primary icons, responsive group menus, active-tool highlight, persistent tabs-only collapse (⌥⌘R) and selected tab
+[X] **Quick access** — File, Save, Undo/Redo, drawing filename, Find, and AI Assistant in one compact title bar; advanced tools preserved
+[X] **Quieter DWG opening** — individual files reuse persistent conversions; source edits invalidate cache, including same-size edits within a second; ODA starts hidden with Qt activation disabled
+
+## File, Workspace & Sheets
+[X] **File menus** — native macOS and in-window menus with Open Recent, Save/Save As, reload, recovery, markup and PDF export
+[X] **Workspace memory** — per-drawing sheet/camera/visibility plus named view presets, matching layers by original name
+[X] **Sheet-aware layers** — optional current-sheet filtering, geometry counts, and Zoom to Layer
+[X] **Recovery** — detached background DXF checkpoints after edits; recovery browser; originals never auto-overwritten; atomic saves
+[X] **Sheet fidelity** — linked raster images, top-down 2D clipped viewports, frozen viewport layers, visible missing/unsupported-content diagnostics
+[X] **PDF export** — selected sheets as separate vector pages; physical paper sizes, explicit scale or fit, entity/layer lineweights; CTB/STB not applied
 
 ## Core Viewer Capabilities
 [X] **DXF/DWG file loading** — supports .dxf, .dwg (via ODA File Converter or LibreDWG), .zip (eTransmit packages), and folders of drawings
@@ -52,6 +65,9 @@ No known regressions or broken features found.
 [X] **Explode on stamp** — symbol explodes to markup lines (not INSERT references)
 
 ## Layer Management
+[X] **English drawing labels** — local aliases for common Russian layer, block, line-type and hatch names in controls and search; original names remain in tooltips without changing identifiers
+[X] **Bulk visibility and reversible isolation** — Show/Hide/Isolate for selected layers or search results; Restore preserves the previous hidden-layer set
+[X] **Named paper-sheet selection** — render one layout at a time; preserve all layout blocks and paper ownership when saving
 [X] **Layer panel** — show/hide (freeze/thaw) any layer, color swatches, entity counts, search filter
 [X] **Lock/unlock layers** — locked layers stay visible but can't be selected or snapped
 [X] **Bulk controls** — All On / All Off buttons
@@ -93,3 +109,16 @@ No known regressions or broken features found.
 [-] **Original entity editing** — editing is additive markup only; source geometry never modified
 [-] **Block INSERT writing** — Stamp tool explodes blocks to lines, not INSERT entities
 [-] **Plot settings** — not exposed (Lock/Freeze are)
+
+## Workspace ergonomics
+[X] **Anchored inspectors** — Issues, Quality, Units and Drawing Info open beside their triggers inside the window, above the status bar; precision includes a numeric field
+[X] **Sheet navigation** — Model/Paper, named sheet, Previous/Next and sheet count beneath the ribbon; empty layouts excluded without changing the file; separate saved cameras for each sheet and Model
+[X] **Fixed properties strip** — current layer and markup color appear once, independent of the active ribbon tab
+[X] **Search navigation** — automatic first-match framing at 28% of the canvas, outline highlight and a results menu above the canvas; closing search restores the prior camera
+[X] **Native editing menus** — real Mac Undo/Redo/Copy/Paste/Find/Zoom shortcuts, no duplicate clipboard entries
+[X] **Text extents** — MTEXT reference-width wrapping with shared rendering, fitting and selection metrics
+[X] **Paper-only model handling** — unused block definitions no longer masquerade as Model-space tables
+[X] **Unit notices** — distinguish coordinate units from mixed-unit annotation labels
+
+[X] **Tabbed inspector sidebar** — Properties and AI Assistant share one panel and remember the selected tab
+[X] **Accessible layer selection** — selected state and default press action, plus separate eye, lock and color controls with 24-point targets

@@ -11,6 +11,7 @@ struct SearchHit: Identifiable, Equatable {
     let screenHeightHint: CGFloat  // world height of the object (0 = unknown)
     let ref: EntityRef
     let isPaper: Bool
+    var bounds: CGRect? = nil
 }
 
 /// In-memory text index over everything the drawing shows — text entities
@@ -27,6 +28,7 @@ final class SearchIndex {
         let heightHint: CGFloat
         let ref: EntityRef
         let isPaper: Bool
+        var bounds: CGRect? = nil
     }
 
     private var entries: [Entry] = []
@@ -48,6 +50,10 @@ final class SearchIndex {
             id < document.layers.count ? document.layers[id].name : "?"
         }
 
+        func searchTerms(_ name: String) -> String {
+            [name, LayerDisplayName.englishAlias(for: name) ?? ""].joined(separator: "\n").lowercased()
+        }
+
         func indexGroups(_ groups: [RenderGroup], isPaper: Bool) {
             for (gi, g) in groups.enumerated() {
                 for (ti, t) in g.texts.enumerated() {
@@ -58,12 +64,12 @@ final class SearchIndex {
                         ? .insert(t.insertId)
                         : .primitive(group: Int32(gi), store: .text, index: Int32(ti))
                     entries.append(Entry(
-                        lower: display.lowercased(),
+                        lower: searchTerms(display),
                         display: display,
                         sublabel: "\(t.kind.label) · \(layerName(g.layerId))",
-                        position: t.position,
+                        position: CGPoint(x: t.worldBounds.midX, y: t.worldBounds.midY),
                         heightHint: t.height,
-                        ref: ref, isPaper: isPaper))
+                        ref: ref, isPaper: isPaper, bounds: t.worldBounds))
                 }
             }
         }
@@ -86,7 +92,7 @@ final class SearchIndex {
             let sublabel = "Block Reference · \(layerName(Int(ins.layerId)))"
             if !display.isEmpty, !display.hasPrefix("*") {
                 entries.append(Entry(
-                    lower: display.lowercased(),
+                    lower: searchTerms(display),
                     display: display,
                     sublabel: sublabel,
                     position: ins.position,
@@ -96,7 +102,7 @@ final class SearchIndex {
             }
             if let shown, !shown.isEmpty, shown != display {
                 entries.append(Entry(
-                    lower: shown.lowercased(),
+                    lower: searchTerms(shown),
                     display: shown,
                     sublabel: sublabel,
                     position: ins.position,
@@ -120,7 +126,7 @@ final class SearchIndex {
             guard e.lower.contains(q) else { continue }
             hits.append(SearchHit(id: id, label: e.display, sublabel: e.sublabel,
                                   position: e.position, screenHeightHint: e.heightHint,
-                                  ref: e.ref, isPaper: e.isPaper))
+                                  ref: e.ref, isPaper: e.isPaper, bounds: e.bounds))
             id += 1
             if hits.count >= limit { break }
         }
@@ -217,4 +223,5 @@ struct SearchHalo: Equatable {
     var position: CGPoint      // world
     var worldRadius: CGFloat   // ring size in world units (0 = fixed screen size)
     var until: Date
+    var bounds: CGRect? = nil
 }

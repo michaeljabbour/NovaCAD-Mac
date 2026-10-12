@@ -10,6 +10,7 @@ enum SpaceSelection: String, CaseIterable, Identifiable {
 }
 
 struct ContentView: View {
+    private let englishNames = true
     /// Owns the document, view transform, selection, tool, and markup state
     /// for the one drawing this view is showing (relocated from what used to
     /// be ContentView's own @State — see DocumentSession.swift). One
@@ -29,34 +30,23 @@ struct ContentView: View {
     /// the real implementation; the default is only for previews/tests.
     var onOpenInNewTab: (URL) -> Void = { _ in }
 
+    var onNewTab: () -> Void = {}
+    var onCloseTab: () -> Void = {}
+    var onRecover: () -> Void = {}
+    @State private var showingPDFExport = false
+
     @State private var darkBackground = true
+    @State private var sidebarVisibility: NavigationSplitViewVisibility = .all
+    @State private var inspectorFooterHeight: CGFloat = 64
 
     @State private var isImporterPresented = false
     @State private var layerSearch = ""
-    @State private var showFileInfo = false
-    /// AI Assistant panel visibility — a plain per-view `@State` (not
-    /// `DocumentSession`) since it's pure UI chrome (like
-    /// `propertiesMinimized`), not conversation state that needs to survive
-    /// a `.id(activeTab.id)` view-identity change on tab switch (that
-    /// survives via `session.aiAssistant` instead — see `DocumentSession`'s
-    /// own doc comment on that field).
-    @State private var showAIAssistant = false
-    /// Whether the AI Assistant is presented as a movable/resizable FLOATING
-    /// glass panel over the drawing (the default) or DOCKED as a trailing
-    /// sidebar alongside the Properties panels. Same "pure UI chrome, per
-    /// view" rationale as `showAIAssistant` above. Floating is the default per
-    /// explicit product decision: the assistant is a conversation ABOUT the
-    /// drawing, and docking it permanently narrows the canvas.
-    @State private var aiAssistantFloating = true
-    /// Where the floating panel currently sits/how big it is. Held here (not
-    /// inside `FloatingAIAssistantPanel`) so a float -> dock -> float round
-    /// trip returns the panel to where the user last put it rather than
-    /// snapping back to the default corner. `nil` until the container size is
-    /// known, at which point `FloatingPanelFrame.defaultFrame` seeds it.
-    @State private var aiAssistantFrame: FloatingPanelFrame?
+    @State private var inspector: WorkspaceInspector?
+    @State private var sidePanelVisible = false
+    @AppStorage("workspaceSidePanelTab") private var sidePanelTab = "Properties"
 
     @State private var propertiesMinimized = false
-    @State private var showUnitsPopover = false
+
 
     @State private var eraseCandidate: EntityID? = nil
     /// Backs the command bar's text-entry experience (autocomplete, ghost
@@ -393,7 +383,11 @@ struct ContentView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        VStack(spacing: 0) {
+        RibbonView(dispatch: commandDispatch, activeAction: activeRibbonAction,
+                   activeToolLabel: currentToolLabel, extras: ribbonExtras)
+        workspaceStrip
+        NavigationSplitView(columnVisibility: $sidebarVisibility) {
             LayersPanel(
                 document: document,
                 isLoading: isLoading,
@@ -411,67 +405,48 @@ struct ContentView: View {
                 onOpenXref: openXrefInNewTab,
                 onDetachXref: beginXrefDetach,
                 liveLayerIds: regen?.layerIdsWithLiveEntities(),
-                onDeleteLayer: deleteLayer
+                onDeleteLayer: deleteLayer,
+                onZoomToLayer: zoomToLayer, sheetUsage: session.currentLayerUsage
             )
-                .navigationSplitViewColumnWidth(min: 240, ideal: 290, max: 420)
+                .navigationSplitViewColumnWidth(min: 300, ideal: 370, max: 560)
         } detail: {
             VStack(spacing: 0) {
-                toolbar
-                Divider()
-                RibbonView(dispatch: commandDispatch)
+                if searchVisible && document != nil { searchBar }
                 HStack(spacing: 0) {
                     drawingArea
-                    if !selectedMarkupIDs.isEmpty {
-                        MarkupPropertiesPanel(
-                            session: session,
-                            document: document,
-                            selectedMarkupIDs: selectedMarkupIDs,
-                            currentFormat: currentFormat,
-                            markupPalette: Self.markupPalette,
-                            markupColor: Binding(get: { markupColor }, set: { markupColor = $0 }),
-                            selection: $session.selection,
-                            onStartMove: startMove,
-                            onStartModify: startModify,
-                            onDeleteSelectedMarkup: deleteSelectedMarkup
-                        )
-                    } else if !selection.isEmpty {
-                        if propertiesMinimized {
-                            MinimizedPropertiesTab(selectionCount: selection.count,
-                                                   propertiesMinimized: $propertiesMinimized)
-                        } else {
-                            PropertiesPanel(session: session,
-                                            document: document,
-                                            selectionCount: selection.count,
-                                            mergedProperties: mergedProperties,
-                                            propertiesMinimized: $propertiesMinimized,
-                                            selection: $session.selection,
-                                            format: currentFormat)
-                        }
-                    }
-                    // Only the DOCKED presentation participates in this
-                    // layout row; the floating one is an overlay over
-                    // `drawingArea` (see its `.overlay` below) so it hovers
-                    // over the canvas instead of narrowing it.
-                    if showAIAssistant && !aiAssistantFloating {
-                        AIAssistantPanel(
-                            aiSession: session.aiAssistant,
-                            regen: regen,
-                            visibility: visibility,
-                            selectionProvider: { [weak session] in session?.selection ?? [] },
-                            onApplyEdits: applyAIProposedEdits,
-                            onApplyGeometry: applyAIProposedGeometry,
-                            onClose: { showAIAssistant = false },
-                            presentation: .docked,
-                            onTogglePresentation: { withAnimation(.easeOut(duration: 0.18)) { aiAssistantFloating = true } }
-                        )
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
-                    }
+                    if sidePanelVisible { workspaceSidePanel }
                 }
-                StatusBarView(settings: settings, document: document, isLoading: isLoading,
-                              space: Binding(get: { space }, set: { space = $0 }),
-                              onSpaceChanged: handleSpaceChanged)
-                if document != nil { commandBar }
+                VStack(spacing: 0) {
+                    StatusBarView(settings: settings, document: document, isLoading: isLoading,
+                                  recoveryStatus: session.workspaceError ?? session.recoveryStatus,
+                                  issueCount: drawingIssues.count,
+                                  onShowIssues: { inspector = .issues }, onShowQuality: { inspector = .quality })
+                    if document != nil { commandBar }
+                }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { inspectorFooterHeight = $0 }
             }
+            // NavigationSplitView hosts its detail in a separate view tree.
+            // Resolve its button anchors here, before that hosting boundary.
+            .overlayPreferenceValue(WorkspaceAnchorPreference.self) { anchors in
+                inspectorOverlay(anchors, statusInspector: true)
+            }
+        }
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .navigation) { quickAccessControls }
+            ToolbarItem(placement: .principal) { documentTitle }
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button(action: toggleSearch) { Image(systemName: "magnifyingglass") }
+                    .help("Find text and blocks (⌘F)").accessibilityLabel("Find in drawing")
+                    .disabled(document == nil || isLoading)
+                assistantToggle
+            }
+        }
+        .overlayPreferenceValue(WorkspaceAnchorPreference.self) { anchors in
+            inspectorOverlay(anchors, statusInspector: false)
+        }
+        .onChange(of: selection) { _, ids in
+            if !ids.isEmpty && !searchVisible { sidePanelVisible = true }
         }
         .frame(minWidth: 1000, minHeight: 650)
         .fileImporter(
@@ -599,6 +574,8 @@ struct ContentView: View {
             openFile(url: url)
         }
         .onDisappear {
+            session.persistWorkspace()
+            session.checkpointRecovery()
             pgpWatcher?.cancel()
             pgpWatcher = nil
         }
@@ -613,6 +590,14 @@ struct ContentView: View {
         // every body evaluation so the disabled-state flags always reflect
         // this tab's CURRENT document/loading/selection/undo state.
         .focusedSceneValue(\.novaCADCommandDispatch, commandDispatch)
+        .focusedSceneValue(\.novaCADFileDispatch, fileDispatch)
+        .sheet(isPresented: $showingPDFExport) {
+            if let regen { PDFExportView(parsed: regen.parsed, visibility: visibility, currentSpace: space,
+                                          sourceName: currentSourceURL?.deletingPathExtension().lastPathComponent ?? "Drawing") }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { _ in
+            session.persistWorkspace(); session.checkpointRecovery()
+        }
     }
 
     /// The single `CommandDispatch` value shared by BOTH `.focusedSceneValue`
@@ -622,7 +607,14 @@ struct ContentView: View {
     /// with each other's disabled-state flags.
     private var commandDispatch: CommandDispatch {
         CommandDispatch(
-            perform: { performRegistryAction($0) },
+            perform: { action in
+                switch action {
+                case .clipboardCopy, .undo, .save, .saveAs, .zoomFit, .extractData, .importData: break
+                case .selectMode: commandFocused = false
+                default: commandFocused = true
+                }
+                performRegistryAction(action)
+            },
             performRedo: { session.redo() },
             hasDocument: document != nil,
             isLoading: isLoading,
@@ -630,8 +622,64 @@ struct ContentView: View {
             canUndo: session.canUndo,
             canRedo: session.canRedo,
             canPaste: { PasteboardSnapshot.read(from: .general) != nil },
-            pasteAtOriginalCoordinates: { pasteAtOriginalCoordinates() }
+            pasteAtOriginalCoordinates: { pasteAtOriginalCoordinates() },
+            showUnits: { inspector = .units },
+            toggleLayers: { sidebarVisibility = sidebarVisibility == .detailOnly ? .all : .detailOnly },
+            showInfo: { inspector = .info }, showSearch: toggleSearch,
+            toggleAssistant: openAssistant,
+            zoomIn: { zoomAtCenter(by: 1.7) }, zoomOut: { zoomAtCenter(by: 0.59) }
         )
+    }
+
+    private var fileDispatch: FileDispatch {
+        FileDispatch(ready: document != nil && !isLoading,
+            open: { isImporterPresented = true }, openURL: { onOpenInNewTab($0) },
+            newTab: onNewTab, close: { session.persistWorkspace(); session.checkpointRecovery(); onCloseTab() },
+            save: saveDrawing, saveAs: saveDrawingAs,
+            reload: {
+                if session.hasUnsavedChanges {
+                    let alert = NSAlert()
+                    alert.messageText = "Reload from disk?"
+                    alert.informativeText = "Your current edits will be kept in a recovery copy, available from File → Recover Unsaved Drawings."
+                    alert.addButton(withTitle: "Reload"); alert.addButton(withTitle: "Cancel")
+                    guard alert.runModal() == .alertFirstButtonReturn else { return }
+                    session.checkpointRecovery()
+                }
+                reloadDocument()
+            }, exportPDF: { showingPDFExport = true }, exportMarkup: saveMarkupAsDXF, recover: onRecover)
+    }
+
+    private func locateImagesFolder() {
+        guard let regen else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true; panel.canChooseFiles = false
+        panel.title = "Locate Drawing Images"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        regen.parsed.resourceDirectories.insert(url, at: 0)
+        regen.fullRebuild(); session.objectWillChange.send()
+        session.persistWorkspace()
+    }
+
+    private func zoomToLayer(_ id: Int) {
+        guard document != nil, let target = session.currentLayerUsage[id]?.bounds,
+              !target.isNull else { return }
+        visibility.hiddenLayerIds.remove(id)
+        fit(to: target.insetBy(dx: -max(target.width * 0.04, 0.01), dy: -max(target.height * 0.04, 0.01)))
+    }
+
+    private func saveViewPreset() {
+        let alert = NSAlert()
+        alert.messageText = "Save View Preset"
+        alert.informativeText = "Remember this sheet, zoom, and layer visibility."
+        let input = NSTextField(string: "")
+        input.placeholderString = "Furniture review"
+        input.frame = NSRect(x: 0, y: 0, width: 300, height: 24)
+        alert.accessoryView = input
+        alert.addButton(withTitle: "Save"); alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = input
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let name = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !name.isEmpty { session.savePreset(name: name) }
     }
 
     private func commitPendingText() {
@@ -657,181 +705,166 @@ struct ContentView: View {
     /// space, or vice versa) — unchanged behavior, just relocated to a named
     /// function so it can be passed as a closure across the view boundary.
     private func handleSpaceChanged() {
-        selection = []; moveState = MoveState(); cancelModify(); cancelTrimExtend(); cancelFilletChamfer(); cancelOffset(); fitToView()
+        selection = []; moveState = MoveState(); cancelModify(); cancelTrimExtend(); cancelFilletChamfer(); cancelOffset();
     }
 
-    private var toolbar: some View {
-        HStack(spacing: 12) {
-            // Wrapped in a horizontal ScrollView so this row's ~20 buttons
-            // stay reachable (scroll instead of silently clip) on any
-            // window width below their natural total size — see
-            // DWGViewerApp.swift's `.frame(minWidth:)` comment for the
-            // full "regardless of window size" fix this is one half of.
-            ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
-            Button("Open File…") { isImporterPresented = true }
-                .disabled(isLoading)
-
-            Button {
-                saveDrawing()
-            } label: { Image(systemName: "square.and.arrow.down") }
-                .keyboardShortcut("s", modifiers: .command)
-                .help("Save (⌘S) — writes every edit (moves, blocks, arrays, new entities, etc.) back to the DXF file")
+    private var quickAccessControls: some View {
+        Group {
+            Menu("File") { FileMenuItems(dispatch: fileDispatch) }
+                .fixedSize().fontWeight(.semibold)
+            Button(action: saveDrawing) { Image(systemName: "square.and.arrow.down") }
+                .help("Save (⌘S)").accessibilityLabel("Save")
                 .disabled(document == nil || isLoading)
+            Button(action: undoLast) { Image(systemName: "arrow.uturn.backward") }
+                .help("Undo (⌘Z)").accessibilityLabel("Undo").disabled(!session.canUndo)
+            Button { session.redo() } label: { Image(systemName: "arrow.uturn.forward") }
+                .help("Redo (⇧⌘Z)").accessibilityLabel("Redo").disabled(!session.canRedo)
+        }.buttonStyle(.borderless).controlSize(.regular)
+    }
 
-            Button {
-                saveDrawingAs()
-            } label: { Image(systemName: "square.and.arrow.down.on.square") }
-                .keyboardShortcut("s", modifiers: [.command, .shift])
-                .help("Save As… (⇧⌘S)")
-                .disabled(document == nil || isLoading)
-
-            Button {
-                fitButtonPressed()
-            } label: { Label("Fit", systemImage: "arrow.up.left.and.arrow.down.right") }
-                .help("Fit main content; press again for full extents")
-                .disabled(document == nil || isLoading)
-
-            Button { zoomAtCenter(by: 1.7) } label: { Image(systemName: "plus.magnifyingglass") }
-                .disabled(document == nil || isLoading)
-            Button { zoomAtCenter(by: 0.59) } label: { Image(systemName: "minus.magnifyingglass") }
-                .disabled(document == nil || isLoading)
-
-            Toggle(isOn: $darkBackground) {
-                Image(systemName: darkBackground ? "moon.fill" : "sun.max")
+    private var documentTitle: some View {
+        HStack(spacing: 6) {
+            Text(currentSourceURL?.lastPathComponent ?? "Open a drawing")
+                .font(.system(size: 12, weight: .medium)).lineLimit(1).truncationMode(.middle)
+                .help(currentSourceURL?.path ?? "Open a drawing to begin")
+            if session.hasUnsavedChanges {
+                Circle().fill(.secondary).frame(width: 6, height: 6).help("Unsaved changes")
             }
-            .toggleStyle(.button)
-            .help("Toggle dark/light canvas")
+        }.frame(maxWidth: 360)
+    }
 
-            Button {
-                showUnitsPopover.toggle()
-            } label: {
-                Label("Units", systemImage: "ruler.fill")
-            }
-            .help("Measurement units & format")
-            .popover(isPresented: $showUnitsPopover) { unitsPopover }
-            .disabled(document == nil)
+    private var assistantToggle: some View {
+        Toggle(isOn: $sidePanelVisible) {
+            Label("Properties & AI", systemImage: "sidebar.right")
+        }
+        .toggleStyle(.button).help("Show or hide Properties and AI Assistant")
+        .accessibilityLabel("Properties and AI panel")
+        .disabled(document == nil)
+    }
 
-            Toggle(isOn: $showAIAssistant) {
-                Label("AI Assistant", systemImage: "sparkles")
-            }
-            .toggleStyle(.button)
-            .help("Show/hide the AI Assistant")
-            .disabled(document == nil)
-            // Right-click the toolbar button to switch presentation without
-            // first having to open the panel and find its header button —
-            // also how a user who somehow lost track of a floating panel can
-            // bring it back to a known place (docking re-anchors it).
-            .contextMenu {
-                Button {
-                    withAnimation(.easeOut(duration: 0.18)) { aiAssistantFloating = true }
-                    showAIAssistant = true
-                } label: {
-                    Label("Float Window", systemImage: "macwindow.on.rectangle")
-                }
-                .disabled(showAIAssistant && aiAssistantFloating)
-                Button {
-                    withAnimation(.easeOut(duration: 0.18)) { aiAssistantFloating = false }
-                    showAIAssistant = true
-                } label: {
-                    Label("Dock to Side", systemImage: "arrow.down.right.and.arrow.up.left.rectangle")
-                }
-                .disabled(showAIAssistant && !aiAssistantFloating)
-                Divider()
-                Button {
-                    // Recenters/resizes the floating panel to its default spot
-                    // — the recovery path if it ends up somewhere awkward.
-                    aiAssistantFrame = nil
-                    aiAssistantFloating = true
-                    showAIAssistant = true
-                } label: {
-                    Label("Reset Panel Position", systemImage: "arrow.counterclockwise")
-                }
-            }
+    private func openAssistant() { sidePanelTab = "AI Assistant"; sidePanelVisible = true }
 
+    private var workspaceSidePanel: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Picker("Inspector tab", selection: $sidePanelTab) {
+                    Text("Properties").tag("Properties")
+                    Text("AI Assistant").tag("AI Assistant")
+                }.pickerStyle(.segmented).labelsHidden()
+                Button { sidePanelVisible = false } label: {
+                    Image(systemName: "xmark").frame(width: 24, height: 24).contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityLabel("Close side panel")
+            }.padding(8)
+            Divider()
+            if sidePanelTab == "AI Assistant" {
+                AIAssistantPanel(aiSession: session.aiAssistant, regen: regen, visibility: visibility,
+                    selectionProvider: { [weak session] in session?.selection ?? [] },
+                    onApplyEdits: applyAIProposedEdits, onApplyGeometry: applyAIProposedGeometry,
+                    onClose: { sidePanelVisible = false }, embedded: true)
+            } else if !selectedMarkupIDs.isEmpty {
+                MarkupPropertiesPanel(session: session, document: document, selectedMarkupIDs: selectedMarkupIDs,
+                    currentFormat: currentFormat, markupPalette: Self.markupPalette,
+                    markupColor: Binding(get: { markupColor }, set: { markupColor = $0 }),
+                    selection: $session.selection, onStartMove: startMove, onStartModify: startModify,
+                    onDeleteSelectedMarkup: deleteSelectedMarkup, panelWidth: 300)
+            } else if !selection.isEmpty {
+                PropertiesPanel(session: session, document: document, selectionCount: selection.count,
+                    mergedProperties: mergedProperties, propertiesMinimized: $propertiesMinimized,
+                    selection: $session.selection, format: currentFormat, embedded: true)
+            } else {
+                Text("Select an object to see its properties.")
+                    .foregroundStyle(.secondary).padding(20)
+                Spacer()
+            }
+        }.frame(width: 300)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .overlay(alignment: .leading) { Divider() }
+    }
+
+    private var allToolsMenu: some View {
             Menu {
                 Button { setTool(select: true) } label: {
                     Label("Select", systemImage: "cursorarrow")
                 }
                 Button { startMove() } label: {
-                    Label("Move  (M)", systemImage: "arrow.up.and.down.and.arrow.left.and.right")
+                    Label("Move", systemImage: "arrow.up.and.down.and.arrow.left.and.right")
                 }
                 .disabled(selection.isEmpty)
                 Button { startModify(.copy) } label: {
-                    Label("Copy  (CO)", systemImage: "plus.square.on.square")
+                    Label("Duplicate", systemImage: "plus.square.on.square")
                 }
                 Button { startModify(.rotate) } label: {
-                    Label("Rotate  (RO)", systemImage: "rotate.right")
+                    Label("Rotate", systemImage: "rotate.right")
                 }
                 Button { startModify(.scale) } label: {
-                    Label("Scale  (SC)", systemImage: "arrow.up.left.and.arrow.down.right")
+                    Label("Scale", systemImage: "arrow.up.left.and.arrow.down.right")
                 }
                 Button { startModify(.mirror) } label: {
-                    Label("Mirror  (MI)", systemImage: "arrow.left.and.right.righttriangle.left.righttriangle.right")
+                    Label("Mirror", systemImage: "arrow.left.and.right.righttriangle.left.righttriangle.right")
                 }
                 Divider()
                 Button { setMeasure(.distance) } label: {
-                    Label("Measure Distance  (DI)", systemImage: "ruler")
+                    Label("Measure Distance", systemImage: "ruler")
                 }
                 Button { setMeasure(.area) } label: {
-                    Label("Measure Area  (AREA)", systemImage: "skew")
+                    Label("Measure Area", systemImage: "skew")
                 }
                 Button { setMeasure(.radius) } label: {
-                    Label("Measure Radius  (RAD)", systemImage: "circle.dashed")
+                    Label("Measure Radius", systemImage: "circle.dashed")
                 }
                 Button { setMeasure(.angle) } label: {
-                    Label("Measure Angle  (ANG)", systemImage: "angle")
+                    Label("Measure Angle", systemImage: "angle")
                 }
                 Divider()
                 Button { startDimensionTool(kind: .aligned) } label: {
-                    Label("Dimension (Aligned)  (DIMALIGNED)", systemImage: "ruler")
+                    Label("Dimension (Aligned)", systemImage: "ruler")
                 }
                 Button { startDimensionTool(kind: .linear) } label: {
-                    Label("Dimension (Linear)  (DIMLINEAR)", systemImage: "ruler.fill")
+                    Label("Dimension (Linear)", systemImage: "ruler.fill")
                 }
                 Divider()
                 Button { setDraft(.line) } label: {
-                    Label("Line  (L)", systemImage: "line.diagonal")
+                    Label("Line", systemImage: "line.diagonal")
                 }
                 Button { setDraft(.polyline) } label: {
-                    Label("Polyline  (PL)", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+                    Label("Polyline", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
                 }
                 Button { setDraft(.circle) } label: {
-                    Label("Circle  (C)", systemImage: "circle")
+                    Label("Circle", systemImage: "circle")
                 }
                 Button { setDraft(.arc3pt) } label: {
-                    Label("Arc, 3 points  (A)", systemImage: "point.3.connected.trianglepath.dotted")
+                    Label("Arc, 3 points", systemImage: "point.3.connected.trianglepath.dotted")
                 }
                 Button { setDraft(.rect) } label: {
-                    Label("Rectangle  (REC)", systemImage: "rectangle")
+                    Label("Rectangle", systemImage: "rectangle")
                 }
                 Button { setDraft(.polygon) } label: {
-                    Label("Polygon  (POL)", systemImage: "hexagon")
+                    Label("Polygon", systemImage: "hexagon")
                 }
                 Button { setDraft(.text) } label: {
-                    Label("Text Note  (T)", systemImage: "textformat")
+                    Label("Text Note", systemImage: "textformat")
                 }
                 Divider()
                 Button { setDraft(.ellipse) } label: {
-                    Label("Ellipse  (EL)", systemImage: "oval")
+                    Label("Ellipse", systemImage: "oval")
                 }
                 Button { setDraft(.pointEnt) } label: {
-                    Label("Point  (PO)", systemImage: "smallcircle.filled.circle")
+                    Label("Point", systemImage: "smallcircle.filled.circle")
                 }
                 Button { setDraft(.splineFit) } label: {
-                    Label("Spline  (SPL)", systemImage: "scribble")
+                    Label("Spline", systemImage: "scribble")
                 }
                 Button { setDraft(.splineCV) } label: {
-                    Label("Spline (Control Vertices)  (SPLINECV)", systemImage: "point.3.connected.trianglepath.dotted")
+                    Label("Spline (Control Vertices)", systemImage: "point.3.connected.trianglepath.dotted")
                 }
                 Button { setDraft(.face3d) } label: {
-                    Label("3D Face  (3DF)", systemImage: "triangle")
+                    Label("3D Face", systemImage: "triangle")
                 }
                 Button { setDraft(.region) } label: {
-                    Label("Region  (REG)", systemImage: "square.dashed")
+                    Label("Region", systemImage: "square.dashed")
                 }
                 Button { startArray() } label: {
-                    Label("Array…  (AR)", systemImage: "square.grid.3x3")
+                    Label("Array…", systemImage: "square.grid.3x3")
                 }
                 if let doc = document, !doc.stampableBlockNames.isEmpty {
                     Menu {
@@ -840,7 +873,7 @@ struct ContentView: View {
                                 stampBlockName = name
                                 setDraft(.stamp)
                             } label: {
-                                Label(name, systemImage: stampBlockName == name
+                                Label(LayerDisplayName.display(name, inEnglish: englishNames), systemImage: stampBlockName == name
                                       ? "checkmark.square" : "square.on.square")
                             }
                         }
@@ -849,7 +882,7 @@ struct ContentView: View {
                     }
                 }
                 Button { startBlock() } label: {
-                    Label("Block  (B)", systemImage: "cube")
+                    Label("Block", systemImage: "cube")
                 }
                 if let doc = document, !doc.stampableBlockNames.isEmpty {
                     Menu {
@@ -857,26 +890,26 @@ struct ContentView: View {
                             Button {
                                 startInsert(blockName: name)
                             } label: {
-                                Label(name, systemImage: "cube.transparent")
+                                Label(LayerDisplayName.display(name, inEnglish: englishNames), systemImage: "cube.transparent")
                             }
                         }
                     } label: {
-                        Label("Insert Block…  (I)", systemImage: "cube.transparent")
+                        Label("Insert Block…", systemImage: "cube.transparent")
                     }
                 }
                 Button { startExplode() } label: {
-                    Label("Explode  (X)", systemImage: "square.dashed")
+                    Label("Explode", systemImage: "square.dashed")
                 }
                 Button { startAttachXref() } label: {
                     Label("Attach Xref…", systemImage: "link")
                 }
                 Divider()
                 Button { copySelectionToPasteboard() } label: {
-                    Label("Copy  (⌘C)", systemImage: "doc.on.doc")
+                    Label("Copy", systemImage: "doc.on.doc")
                 }
                 .disabled(selection.isEmpty)
                 Button { startClipboardPaste() } label: {
-                    Label("Paste…  (⌘V)", systemImage: "doc.on.clipboard")
+                    Label("Paste…", systemImage: "doc.on.clipboard")
                 }
                 .disabled(PasteboardSnapshot.read(from: .general) == nil)
                 Button { pasteAtOriginalCoordinates() } label: {
@@ -885,11 +918,11 @@ struct ContentView: View {
                 .disabled(PasteboardSnapshot.read(from: .general) == nil)
                 Divider()
                 Button { setDraft(.erase) } label: {
-                    Label("Erase Markup  (E)", systemImage: "eraser")
+                    Label("Erase Markup", systemImage: "eraser")
                 }
                 Button {
                     undoLast()
-                } label: { Label("Undo  (U / ⌘Z)", systemImage: "arrow.uturn.backward") }
+                } label: { Label("Undo", systemImage: "arrow.uturn.backward") }
                     .disabled(!session.canUndo)
                 Divider()
                 Button { saveMarkupAsDXF() } label: {
@@ -902,68 +935,193 @@ struct ContentView: View {
                 .disabled(!hasMarkup || document?.sourceDXFURL == nil)
                 Divider()
                 Button { extractDataToCSV() } label: {
-                    Label("Extract Data…  (DX)", systemImage: "tablecells")
+                    Label("Extract Data…", systemImage: "tablecells")
                 }
                 Button { importDataFromCSV() } label: {
                     Label("Import Data…", systemImage: "square.and.arrow.down.on.square.fill")
                 }
             } label: {
-                Label(currentToolLabel, systemImage: currentToolIcon)
+                Label("All tools", systemImage: "square.grid.2x2")
             }
-            .frame(width: 170)
+            .fixedSize()
             .disabled(document == nil || isLoading)
 
-            markupColorMenu
 
-            Button {
-                undoLast()
-            } label: { Image(systemName: "arrow.uturn.backward") }
-                .keyboardShortcut("z", modifiers: .command)
-                .help("Undo (⌘Z, or U in the command line)")
-                .disabled(!session.canUndo)
+    }
 
-            Button {
-                session.redo()
-            } label: { Image(systemName: "arrow.uturn.forward") }
-                .keyboardShortcut("z", modifiers: [.command, .shift])
-                .help("Redo (⇧⌘Z)")
-                .disabled(!session.canRedo)
-
-            Button {
-                toggleSearch()
-            } label: { Label("Search", systemImage: "magnifyingglass") }
-                .keyboardShortcut("f", modifiers: .command)
-                .help("Search drawing text and blocks (⌘F)")
-                .disabled(document == nil || isLoading)
-            }
-            }
-
-            Spacer(minLength: 0)
-
-            if isLoading {
-                ProgressView(value: loadProgress)
-                    .frame(width: 160)
-                Text(String(format: "%.0f%%", loadProgress * 100))
-                    .font(.caption).monospacedDigit()
-            } else if let doc = document {
-                Button {
-                    showFileInfo.toggle()
-                } label: {
-                    Label("\(doc.stats.totalEntities) entities",
-                          systemImage: "info.circle")
-                        .font(.caption)
+    private var savedViewsMenu: some View {
+            Menu("Saved views") {
+                Button("Save View Preset…", action: saveViewPreset)
+                ForEach(session.presets) { preset in
+                    Button(preset.name) { handleSpaceChanged(); _ = session.restoreWorkspace(preset.workspace) }
                 }
-                .buttonStyle(.plain)
-                .popover(isPresented: $showFileInfo) { fileInfoPopover(doc) }
+                if !session.presets.isEmpty {
+                    Menu("Delete Preset") {
+                        ForEach(session.presets) { preset in
+                            Button(preset.name) { session.deletePreset(preset.id) }
+                        }
+                    }
+                }
+            }.disabled(document == nil || isLoading)
+
+    }
+
+    private var workspaceStrip: some View {
+        HStack(spacing: 12) {
+            SheetNavigationView(space: Binding(get: { space }, set: changeSpace),
+                sheets: regen?.navigationPaperLayouts ?? [], activeID: regen?.parsed.activePaperLayoutID,
+                onSelect: selectPaperSheet)
+            Spacer(minLength: 0)
+            Picker("Current layer", selection: $session.currentProperties.layerName) {
+                if let doc = document {
+                    ForEach(doc.layers, id: \.name) { layer in
+                        Text(LayerDisplayName.display(layer.name, inEnglish: englishNames)).tag(layer.name)
+                    }
+                }
+            }.frame(maxWidth: 220).help("Layer for new geometry")
+            markupColorMenu
+        }
+        .disabled(document == nil || isLoading)
+        .padding(.horizontal, 12).padding(.vertical, 6)
+        .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    private func changeSpace(_ target: SpaceSelection) {
+        if searchVisible { closeSearch() }
+        animationTimer?.invalidate()
+        session.switchSpace(to: target)
+        handleSpaceChanged()
+        session.persistWorkspace()
+    }
+
+    private func selectPaperSheet(_ id: UInt64) {
+        if searchVisible { closeSearch() }
+        animationTimer?.invalidate()
+        session.switchSpace(to: .paper, sheetID: id)
+        handleSpaceChanged()
+        session.persistWorkspace()
+    }
+
+    @ViewBuilder
+    private func ribbonExtras(_ tab: RibbonTab) -> some View {
+        switch tab {
+        case .home:
+            RibbonGroup(title: "Workspace") {
+                VStack(alignment: .leading, spacing: 3) {
+                    Button { sidePanelVisible.toggle() } label: { Label("Properties & AI", systemImage: "sidebar.right") }
+                    Button(action: toggleSearch) { Label("Find in drawing", systemImage: "magnifyingglass") }
+                }.buttonStyle(RibbonButtonStyle()).disabled(document == nil || isLoading)
+            }
+        case .draw:
+            RibbonGroup(title: "More tools") { allToolsMenu }
+        case .modify, .annotate: EmptyView()
+        case .view:
+            RibbonGroup(title: "Zoom") {
+                VStack(alignment: .leading, spacing: 3) {
+                    Button(action: fitButtonPressed) { Label("Fit drawing", systemImage: "arrow.up.left.and.arrow.down.right") }.help("Fit drawing (Z, ⌘0)")
+                    HStack(spacing: 0) {
+                        Button { zoomAtCenter(by: 1.7) } label: { Label("In", systemImage: "plus.magnifyingglass") }
+                        Button { zoomAtCenter(by: 0.59) } label: { Label("Out", systemImage: "minus.magnifyingglass") }
+                    }
+                }.buttonStyle(RibbonButtonStyle()).disabled(document == nil || isLoading)
+            }
+            RibbonGroup(title: "Workspace") {
+                VStack(alignment: .leading, spacing: 6) {
+                    savedViewsMenu
+                    Toggle("Dark canvas", isOn: $darkBackground).toggleStyle(.checkbox)
+                }.padding(.top, 3).frame(minWidth: 140, alignment: .leading)
+            }
+            RibbonGroup(title: "Drawing") {
+                VStack(alignment: .leading, spacing: 3) {
+                    unitsButton
+                    Button { inspector = .info } label: { Label("Drawing info", systemImage: "info.circle") }
+                        .workspaceAnchor(.button(.info))
+                }.buttonStyle(RibbonButtonStyle()).disabled(document == nil || isLoading)
             }
         }
-        .padding(10)
-        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var unitsButton: some View {
+        Button { inspector = .units } label: { Label("Units & format", systemImage: "ruler.fill") }
+            .workspaceAnchor(.button(.units))
+            .buttonStyle(RibbonButtonStyle()).disabled(document == nil || isLoading)
+    }
+
+    private var unitNotice: String? { document.flatMap { DrawingDiagnostics.unitNotice(in: $0) } }
+    private var drawingIssues: [String] { (document?.renderingWarnings ?? []) + [unitNotice].compactMap { $0 } }
+
+    private func inspectorOverlay(_ anchors: [WorkspaceAnchor: Anchor<CGRect>], statusInspector: Bool) -> some View {
+        GeometryReader { proxy in
+            if let inspector, (inspector == .issues || inspector == .quality) == statusInspector {
+                let origin = anchors[.button(inspector)].map { proxy[$0] }
+                    ?? CGRect(x: proxy.size.width - 398, y: 0, width: 0, height: 0)
+                AnchoredInspector(anchor: origin, container: proxy.size,
+                    statusBar: anchors[.statusBar].map { proxy[$0] }
+                        ?? CGRect(x: 0, y: proxy.size.height - inspectorFooterHeight,
+                                  width: proxy.size.width, height: inspectorFooterHeight)) { inspectorCard }
+            }
+        }
+    }
+
+    @ViewBuilder private var inspectorCard: some View {
+        if let inspector {
+            WorkspaceInspectorCard(title: inspector.rawValue, onClose: { self.inspector = nil }) {
+                switch inspector {
+                case .units: unitsPopover
+                case .info: if let doc = document { fileInfoPopover(doc) }
+                case .issues:
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 12) {
+                            ForEach(drawingIssues, id: \.self) { issue in
+                                Text(issue).font(.callout).fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+                            }
+                        }
+                    }.frame(height: min(300, CGFloat(drawingIssues.count) * 95))
+                    Button("Locate Images Folder…", action: locateImagesFolder)
+                case .quality:
+                    Picker("Rendering quality", selection: $settings.renderQuality) {
+                        Text("1 — Fastest").tag(1)
+                        Text("2 — Fast").tag(2)
+                        Text("3 — Balanced (recommended)").tag(3)
+                        Text("4 — Fine").tag(4)
+                        Text("5 — Highest detail").tag(5)
+                    }.pickerStyle(.radioGroup).labelsHidden()
+                    Text("Higher detail can slow redraws on large drawings.").font(.caption).foregroundStyle(.secondary)
+                    Button("Reset to Default") { settings.renderQuality = 3 }
+                }
+            }
+        }
+    }
+
+    private var activeRibbonAction: CommandAction? {
+        if modifyState.isActive { return .modify(modifyState.command) }
+        if trimExtendState.isActive { return .trimExtend(trimExtendState.command) }
+        if stretchState.isActive { return .stretch }
+        if filletChamferState.isActive { return .filletChamfer(filletChamferState.command) }
+        if offsetState.isActive { return .offset }
+        if dimensionToolState.isActive { return .dimension(dimensionToolState.kind) }
+        if blockToolState.isActive { return .blockCommand(blockToolState.command) }
+        if clipboardPasteToolState.isActive { return .clipboardPaste }
+        if arrayToolState.isActive { return .array }
+        if moveState.isActive { return .moveTool }
+        if explodeAwaitingSelection { return .explode }
+        if joinAwaitingSelection { return .join }
+        if awaitingAttEditPick { return .attedit }
+        if awaitingAttdefPlacement { return .attdef }
+        if xrefAttachToolState.isActive { return nil }
+        if draft.isActive { return .tool(draft.mode) }
+        switch measure.mode {
+        case .distance: return .measureDistance
+        case .area: return .measureArea
+        case .radius: return .measureRadius
+        case .angle: return .measureAngle
+        case .select: return .selectMode
+        }
     }
 
     private var unitsPopover: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Units & Format").font(.headline)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("Length format").font(.caption).foregroundColor(.secondary)
@@ -978,7 +1136,7 @@ struct ContentView: View {
                 Picker("", selection: $settings.unitSystemRaw) {
                     ForEach(UnitSystem.allCases) { Text($0.label).tag($0.rawValue) }
                 }
-                .pickerStyle(.segmented).labelsHidden().frame(width: 220)
+                .pickerStyle(.menu).labelsHidden().frame(maxWidth: .infinity)
                 .disabled(currentFormat.style.isFeetInches)
                 if currentFormat.style.isFeetInches {
                     Text("Architectural/Engineering always use feet & inches.")
@@ -992,7 +1150,12 @@ struct ContentView: View {
                 Text(frac ? "Smallest fraction: 1/\(1 << min(max(unitPrecision,0),6))"
                           : "Decimal places: \(min(max(unitPrecision,0),8))")
                     .font(.caption).foregroundColor(.secondary)
-                Stepper("", value: $settings.unitPrecision, in: 0...8).labelsHidden()
+                HStack(spacing: 6) {
+                    TextField("Decimal places", value: Binding(get: { settings.unitPrecision },
+                        set: { settings.unitPrecision = min(max($0, 0), frac ? 6 : 8) }), format: .number)
+                        .textFieldStyle(.roundedBorder).frame(width: 55)
+                    Stepper("Precision", value: $settings.unitPrecision, in: 0...(frac ? 6 : 8)).labelsHidden()
+                }
             }
 
             if let doc = document {
@@ -1000,6 +1163,7 @@ struct ContentView: View {
                      : "Drawing units: \(doc.unitsLabel)")
                     .font(.caption2).foregroundColor(.secondary)
             }
+            if let unitNotice { Text(unitNotice).font(.caption).fixedSize(horizontal: false, vertical: true) }
             HStack {
                 Text("Example:").font(.caption).foregroundColor(.secondary)
                 Text(currentFormat.length(66.5)).font(.caption).bold()
@@ -1007,15 +1171,16 @@ struct ContentView: View {
             Button("Reset") { unitSystemRaw = UnitSystem.asDrawn.rawValue
                 lengthStyleRaw = LengthStyle.decimal.rawValue; unitPrecision = 2 }
         }
-        .padding(14)
-        .frame(width: 250)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func fileInfoPopover(_ doc: DXFDocument) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("File statistics").font(.headline)
             Text("Entities rendered: \(doc.stats.totalEntities)")
-            Text("Layers used: \(doc.layers.filter { $0.entityCount > 0 }.count) of \(doc.layers.count)")
+            Text("Layers used in file: \(regen?.layerIdsWithLiveEntities().count ?? doc.layers.filter { $0.entityCount > 0 }.count) of \(doc.layers.count)")
+            Text("Includes all sheets and block definitions").font(.caption).foregroundStyle(.secondary)
+            Text("Layers on this \(space == .paper ? "sheet" : "model"): \(session.currentLayerUsage.count)")
             Text("Render groups: \(doc.modelGroups.count) model, \(doc.paperGroups.count) paper")
             Text(String(format: "Parse: %.1fs · Geometry: %.1fs",
                         doc.stats.parseSeconds, doc.stats.buildSeconds))
@@ -1136,21 +1301,42 @@ struct ContentView: View {
                 } else {
                     Color(red: 0.13, green: 0.16, blue: 0.19)
                     if !isLoading {
-                        VStack(spacing: 10) {
-                            Image(systemName: "doc.badge.plus").font(.largeTitle)
-                            Text("Open a DXF or DWG file to view the drawing.")
+                        VStack(alignment: .leading, spacing: 14) {
+                            Label("NovaCAD", systemImage: "square.3.layers.3d")
+                                .font(.system(size: 23, weight: .semibold))
+                            Text("Open a drawing").font(.title3)
+                            Text("Explore sheets, organize layers, and mark up your plans.")
+                                .foregroundStyle(.secondary)
+                            Button { isImporterPresented = true } label: {
+                                Label("Open DWG or DXF…", systemImage: "folder")
+                            }.buttonStyle(.borderedProminent).controlSize(.large)
+                            Text("You can also drop a drawing or drawing package here.")
+                                .font(.caption).foregroundStyle(.secondary)
                         }
-                        .foregroundColor(.secondary)
+                        .padding(28).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
                     }
                 }
             }
-            .overlay(alignment: .top) {
-                if searchVisible && document != nil { searchBar }
+            .overlay {
+                if !isLoading, space == .model, let doc = document,
+                   doc.modelGroups.isEmpty, doc.modelImages.isEmpty {
+                    VStack(spacing: 10) {
+                        Text("Model space is empty").font(.headline)
+                        if let layouts = regen?.navigationPaperLayouts, !layouts.isEmpty {
+                            Text("This drawing contains \(layouts.count) paper sheets.").foregroundStyle(.secondary)
+                            Button("Show Paper Sheets") { changeSpace(.paper) }
+                        }
+                    }.padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+                }
             }
             .overlay {
                 if isLoading {
                     VStack(spacing: 12) {
-                        ProgressView(value: loadProgress) { Text("Loading…") }
+                        Text(currentSourceURL?.lastPathComponent ?? "Opening drawing")
+                            .font(.headline).lineLimit(1).truncationMode(.middle).frame(width: 300)
+                        ProgressView(value: loadProgress) {
+                            Text(loadProgress < 0.08 ? "Preparing drawing…" : loadProgress < 0.8 ? "Reading drawing…" : "Preparing canvas…")
+                        }
                             .progressViewStyle(.linear)
                             .frame(width: 300)
                         Text(String(format: "%.0f%%", loadProgress * 100))
@@ -1182,34 +1368,18 @@ struct ContentView: View {
                     .padding(20).background(.regularMaterial).cornerRadius(12)
                 }
             }
-            // The FLOATING AI Assistant hovers over the canvas (rather than
-            // narrowing it, as the docked presentation does). Anchored
-            // `.topLeading` so `FloatingPanelFrame`'s origin is a plain
-            // top-left offset in this container's coordinate space, which is
-            // exactly what its clamping math assumes.
-            .overlay(alignment: .topLeading) {
-                if showAIAssistant && aiAssistantFloating {
-                    FloatingAIAssistantPanel(
-                        aiSession: session.aiAssistant,
-                        regen: regen,
-                        visibility: visibility,
-                        selectionProvider: { [weak session = session] in session?.selection ?? [] },
-                        onApplyEdits: applyAIProposedEdits,
-                        onApplyGeometry: applyAIProposedGeometry,
-                        onClose: { showAIAssistant = false },
-                        onDock: { withAnimation(.easeOut(duration: 0.18)) { aiAssistantFloating = false } },
-                        containerSize: proxy.size,
-                        frame: Binding(
-                            get: { aiAssistantFrame ?? FloatingPanelFrame.defaultFrame(in: proxy.size) },
-                            set: { aiAssistantFrame = $0 })
-                    )
-                }
-            }
             .onAppear { viewSize = proxy.size }
             .onChange(of: proxy.size) { _, newSize in
-                let hadSize = viewSize.width > 1
+                let oldSize = viewSize
+                let hadSize = oldSize.width > 1
                 viewSize = newSize
-                if !hadSize { fitToView() }
+                if let saved = session.pendingWorkspace { _ = session.restoreWorkspace(saved) }
+                else if searchVisible, searchResults.indices.contains(searchCursor) { performGoTo(hit: searchResults[searchCursor]) }
+                else if !hadSize { fitToView() }
+                else {
+                    pan.width += (newSize.width - oldSize.width) / 2
+                    pan.height += (newSize.height - oldSize.height) / 2
+                }
             }
         }
     }
@@ -1217,25 +1387,28 @@ struct ContentView: View {
     // MARK: - Deep search
 
     private func toggleSearch() {
-        searchVisible.toggle()
-        if searchVisible {
+        if searchVisible { closeSearch() }
+        else {
+            animationTimer?.invalidate()
+            session.beginSearch()
             DispatchQueue.main.async { searchFocused = true }
-        } else {
-            closeSearch()
         }
     }
 
     private func closeSearch() {
-        searchVisible = false
+        animationTimer?.invalidate()
+        halo = nil
         searchFocused = false
-        searchQuery = ""
-        searchResults = []
-        searchCursor = -1
+        session.endSearch()
     }
 
     private func runSearch() {
+        if let doc = document, searchIndex?.documentID != ObjectIdentifier(doc) {
+            searchIndex = SearchIndex(document: doc, store: regen?.parsed.store)
+        }
         searchResults = searchIndex?.search(searchQuery) ?? []
-        searchCursor = -1
+        searchCursor = searchResults.isEmpty ? -1 : 0
+        if let first = searchResults.first { goTo(hit: first) }
     }
 
     private func nextHit(_ direction: Int = 1) {
@@ -1250,7 +1423,7 @@ struct ContentView: View {
     }
 
     /// The "N-iteration" re-centering engine: animate pan/zoom to center the
-    /// hit, select it, and flash a halo for 1.5s.
+    /// hit, select it, and flash an outline for 3s.
     private func goTo(hit: SearchHit) {
         let wantPaper = hit.isPaper
         if (space == .paper) != wantPaper {
@@ -1268,23 +1441,11 @@ struct ContentView: View {
             selection = [id]
         }
 
-        // Zoom: keep the current level if the target is comfortably visible,
-        // else zoom so its text height lands around 40 points.
-        var targetZoom = zoom
-        if hit.screenHeightHint > 0 {
-            let current = hit.screenHeightHint * zoom
-            if current < 14 || current > 300 { targetZoom = 40 / hit.screenHeightHint }
-        }
-        targetZoom = max(1e-9, min(targetZoom, 1e9))
-
-        let sx = targetZoom * (hit.position.x - bounds.midX)
-        let sy = -targetZoom * (hit.position.y - bounds.midY)
-        let targetPan = CGSize(width: viewSize.width / 2 - sx,
-                               height: viewSize.height / 2 - sy)
-        animateViewport(toZoom: targetZoom, pan: targetPan)
+        let target = SearchFraming.viewport(for: hit, size: viewSize)
+        animateViewport(toZoom: target.zoom, pan: target.pan(in: viewSize, bounds: bounds))
         halo = SearchHalo(position: hit.position,
                           worldRadius: hit.screenHeightHint * 1.6,
-                          until: Date().addingTimeInterval(1.5))
+                          until: Date().addingTimeInterval(3), bounds: hit.bounds)
     }
 
     private func animateViewport(toZoom targetZoom: CGFloat, pan targetPan: CGSize,
@@ -1321,7 +1482,18 @@ struct ContentView: View {
                     Button { nextHit(-1) } label: { Image(systemName: "chevron.up") }
                         .buttonStyle(.plain)
                     Button { nextHit(1) } label: { Image(systemName: "chevron.down") }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.plain).accessibilityLabel("Next search match")
+                    Menu {
+                        ForEach(searchResults) { hit in
+                            Button(hit.label) {
+                                searchCursor = searchResults.firstIndex(of: hit) ?? 0
+                                goTo(hit: hit)
+                            }
+                        }
+                    } label: {
+                        Text(searchResults[max(0, searchCursor)].label).lineLimit(1).truncationMode(.tail)
+                    }.frame(maxWidth: 300)
+
                 } else if searchQuery.count >= 2 {
                     Text("No matches").font(.caption).foregroundColor(.secondary)
                 }
@@ -1333,34 +1505,7 @@ struct ContentView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
 
-            if !searchResults.isEmpty && searchCursor < 0 {
-                Divider()
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(searchResults.prefix(8)) { hit in
-                        Button {
-                            searchCursor = searchResults.firstIndex(of: hit) ?? 0
-                            goTo(hit: hit)
-                        } label: {
-                            HStack {
-                                Text(hit.label).lineLimit(1)
-                                Spacer()
-                                Text(hit.sublabel)
-                                    .font(.caption2).foregroundColor(.secondary)
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 4)
-                    }
-                    if searchResults.count > 8 {
-                        Text("… \(searchResults.count - 8) more — press ⏎ to step through")
-                            .font(.caption2).foregroundColor(.secondary)
-                            .padding(.horizontal, 12).padding(.vertical, 4)
-                    }
-                }
-                .padding(.bottom, 6)
-            }
+
         }
         .background(.regularMaterial)
         .cornerRadius(10)
@@ -1449,7 +1594,7 @@ struct ContentView: View {
         } else if let pending = pendingSetVar {
             return "Enter new value for \(pending) <\(sysVarDisplay(pending))>: "
         } else {
-            return commandMessage.isEmpty ? "Command (L, PL, C, A, REC, M, E, DI, AREA, Z — or x,y / @dx,dy / length)" : commandMessage
+            return commandMessage.isEmpty ? "Command (L, PL, C, A, REC, M, E, DI, AA, Z — or x,y / @dx,dy / length)" : commandMessage
         }
     }
 
@@ -2151,12 +2296,15 @@ struct ContentView: View {
         // into a `.dwg`-named path would silently corrupt it from any other
         // tool's point of view — falls through to Save As instead, which
         // prompts for a real `.dxf` destination.
+        if session.recoveredDocument { saveDrawingAs(); return }
         guard let url = doc.sourceDXFURL
             ?? (currentSourceURL?.pathExtension.lowercased() == "dxf" ? currentSourceURL : nil)
         else { saveDrawingAs(); return }
         do {
-            let warnings = try DXFStructuralWriter.write(regen.parsed, to: url)
+            let warnings = try DrawingFileWriter.write(regen.parsed, to: url)
             doc.sourceDXFURL = url
+            session.markSaved(to: url)
+            NSDocumentController.shared.noteNewRecentDocumentURL(url)
             commandMessage = warnings.isEmpty
                 ? "Saved \(url.lastPathComponent)"
                 : "Saved \(url.lastPathComponent) (\(warnings.count) warning(s) — see Console)"
@@ -2177,12 +2325,14 @@ struct ContentView: View {
         guard let regen = session.regen, let doc = document else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [UTType(filenameExtension: "dxf") ?? .data]
-        panel.nameFieldStringValue = doc.sourceDXFURL?.lastPathComponent ?? "drawing.dxf"
+        panel.nameFieldStringValue = doc.sourceDXFURL?.lastPathComponent ?? ((currentSourceURL?.deletingPathExtension().lastPathComponent ?? "drawing") + ".dxf")
         panel.title = "Save Drawing As"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            let warnings = try DXFStructuralWriter.write(regen.parsed, to: url)
+            let warnings = try DrawingFileWriter.write(regen.parsed, to: url)
             doc.sourceDXFURL = url
+            session.markSaved(to: url)
+            NSDocumentController.shared.noteNewRecentDocumentURL(url)
             commandMessage = warnings.isEmpty
                 ? "Saved \(url.lastPathComponent)"
                 : "Saved \(url.lastPathComponent) (\(warnings.count) warning(s) — see Console)"
@@ -2402,8 +2552,8 @@ struct ContentView: View {
                 draft.ellipseRotationMode = false
                 draft.splineClose = false
             }
-        } else if measure.isActive, !measure.points.isEmpty || measure.hover != nil {
-            measure = MeasureState(mode: measure.mode)
+        } else if measure.isActive {
+            measure = MeasureState()
         } else if searchVisible {
             closeSearch()
         } else {
@@ -2823,6 +2973,11 @@ struct ContentView: View {
     }
 
     private var currentToolLabel: String {
+        if stretchState.isActive { return "Stretch" }
+        if explodeAwaitingSelection { return "Explode" }
+        if joinAwaitingSelection { return "Join" }
+        if awaitingAttEditPick { return "Edit attributes" }
+        if awaitingAttdefPlacement { return "Define attribute" }
         if modifyState.isActive { return modifyState.command.displayName }
         if trimExtendState.isActive { return trimExtendState.command.displayName }
         if filletChamferState.isActive { return filletChamferState.command.displayName }
@@ -2939,12 +3094,15 @@ struct ContentView: View {
                 }
             }
         } label: {
-            // Swatch of the current markup color.
-            Image(systemName: "square.fill")
-                .foregroundColor(Color(rgb: ACIPalette.rgb(forACI: markupColor)))
+            Label {
+                Text("Markup color")
+            } icon: {
+                Image(systemName: "square.fill")
+                    .foregroundColor(Color(rgb: ACIPalette.rgb(forACI: markupColor)))
+            }
         }
         .menuIndicator(.visible)
-        .frame(width: 54)
+        .fixedSize()
         .help("Markup color — draw current vs. proposed flows in different colors")
         .disabled(document == nil || isLoading)
     }
@@ -3674,18 +3832,18 @@ struct ContentView: View {
             }
         }
         if !selection.isEmpty {
-            items.append(ContextMenuAction(title: "Move  (M)", action: { [self] in startMove() }))
-            items.append(ContextMenuAction(title: "Copy  (CO)", action: { [self] in startModify(.copy) }))
-            items.append(ContextMenuAction(title: "Rotate  (RO)", action: { [self] in startModify(.rotate) }))
-            items.append(ContextMenuAction(title: "Scale  (SC)", action: { [self] in startModify(.scale) }))
-            items.append(ContextMenuAction(title: "Mirror  (MI)", action: { [self] in startModify(.mirror) }))
-            items.append(ContextMenuAction(title: "Trim (selection = cutting edges)  (TR)", action: { [self] in startTrimExtend(.trim) }))
-            items.append(ContextMenuAction(title: "Extend (selection = boundary edges)  (EX)", action: { [self] in startTrimExtend(.extend) }))
-            items.append(ContextMenuAction(title: "Stretch  (STR)", action: { [self] in startStretch() }))
-            items.append(ContextMenuAction(title: "Join  (J)", action: { [self] in startJoin() }))
-            items.append(ContextMenuAction(title: "Explode  (X)", action: { [self] in startExplode() }))
-            items.append(ContextMenuAction(title: "Block  (B)", action: { [self] in startBlock() }))
-            items.append(ContextMenuAction(title: "Array…  (AR)", action: { [self] in startArray() }))
+            items.append(ContextMenuAction(title: "Move", action: { [self] in startMove() }))
+            items.append(ContextMenuAction(title: "Duplicate", action: { [self] in startModify(.copy) }))
+            items.append(ContextMenuAction(title: "Rotate", action: { [self] in startModify(.rotate) }))
+            items.append(ContextMenuAction(title: "Scale", action: { [self] in startModify(.scale) }))
+            items.append(ContextMenuAction(title: "Mirror", action: { [self] in startModify(.mirror) }))
+            items.append(ContextMenuAction(title: "Trim (selection = cutting edges)", action: { [self] in startTrimExtend(.trim) }))
+            items.append(ContextMenuAction(title: "Extend (selection = boundary edges)", action: { [self] in startTrimExtend(.extend) }))
+            items.append(ContextMenuAction(title: "Stretch", action: { [self] in startStretch() }))
+            items.append(ContextMenuAction(title: "Join", action: { [self] in startJoin() }))
+            items.append(ContextMenuAction(title: "Explode", action: { [self] in startExplode() }))
+            items.append(ContextMenuAction(title: "Block", action: { [self] in startBlock() }))
+            items.append(ContextMenuAction(title: "Array…", action: { [self] in startArray() }))
             // "Delete" — removes the selected object(s) from the drawing.
             // Works for ANY selected entity (original geometry or markup)
             // via `deleteSelection()`; the deletion is an in-memory,
@@ -3720,25 +3878,25 @@ struct ContentView: View {
         }
         items.append(ContextMenuAction(title: "Select mode", action: { [self] in setTool(select: true) }))
         items.append(.separator)
-        items.append(ContextMenuAction(title: "Line  (L)", action: { [self] in setDraft(.line) }))
-        items.append(ContextMenuAction(title: "Polyline  (PL)", action: { [self] in setDraft(.polyline) }))
-        items.append(ContextMenuAction(title: "Circle  (C)", action: { [self] in setDraft(.circle) }))
-        items.append(ContextMenuAction(title: "Rectangle  (REC)", action: { [self] in setDraft(.rect) }))
-        items.append(ContextMenuAction(title: "Text Note  (T)", action: { [self] in setDraft(.text) }))
+        items.append(ContextMenuAction(title: "Line", action: { [self] in setDraft(.line) }))
+        items.append(ContextMenuAction(title: "Polyline", action: { [self] in setDraft(.polyline) }))
+        items.append(ContextMenuAction(title: "Circle", action: { [self] in setDraft(.circle) }))
+        items.append(ContextMenuAction(title: "Rectangle", action: { [self] in setDraft(.rect) }))
+        items.append(ContextMenuAction(title: "Text Note", action: { [self] in setDraft(.text) }))
         items.append(.separator)
-        items.append(ContextMenuAction(title: "Trim  (TR)", action: { [self] in startTrimExtend(.trim) }))
-        items.append(ContextMenuAction(title: "Extend  (EX)", action: { [self] in startTrimExtend(.extend) }))
-        items.append(ContextMenuAction(title: "Fillet  (F)", action: { [self] in startFilletChamfer(.fillet) }))
-        items.append(ContextMenuAction(title: "Chamfer  (CHA)", action: { [self] in startFilletChamfer(.chamfer) }))
-        items.append(ContextMenuAction(title: "Offset  (O)", action: { [self] in startOffset() }))
+        items.append(ContextMenuAction(title: "Trim", action: { [self] in startTrimExtend(.trim) }))
+        items.append(ContextMenuAction(title: "Extend", action: { [self] in startTrimExtend(.extend) }))
+        items.append(ContextMenuAction(title: "Fillet", action: { [self] in startFilletChamfer(.fillet) }))
+        items.append(ContextMenuAction(title: "Chamfer", action: { [self] in startFilletChamfer(.chamfer) }))
+        items.append(ContextMenuAction(title: "Offset", action: { [self] in startOffset() }))
         items.append(.separator)
-        items.append(ContextMenuAction(title: "Measure Distance  (DI)", action: { [self] in setMeasure(.distance) }))
-        items.append(ContextMenuAction(title: "Measure Area  (AREA)", action: { [self] in setMeasure(.area) }))
+        items.append(ContextMenuAction(title: "Measure Distance", action: { [self] in setMeasure(.distance) }))
+        items.append(ContextMenuAction(title: "Measure Area", action: { [self] in setMeasure(.area) }))
         items.append(ContextMenuAction(title: "Dimension (Aligned)", action: { [self] in startDimensionTool(kind: .aligned) }))
         items.append(ContextMenuAction(title: "Dimension (Linear)", action: { [self] in startDimensionTool(kind: .linear) }))
         items.append(.separator)
         items.append(ContextMenuAction(title: "Zoom Fit", action: { [self] in fitButtonPressed() }))
-        items.append(ContextMenuAction(title: "Undo  (U)", action: { [self] in undoLast() }))
+        items.append(ContextMenuAction(title: "Undo", action: { [self] in undoLast() }))
         return items
     }
 
@@ -6368,7 +6526,10 @@ struct ContentView: View {
         loadingXrefIndex = 0
         loadingXrefTotal = 0
         loadCancelRequested = false
+        session.persistWorkspace()
+        session.checkpointRecovery()
         currentSourceURL = url
+        let recovery = session.pendingRecovery
         let scoped = url.startAccessingSecurityScopedResource()
         Task.detached(priority: .userInitiated) {
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
@@ -6406,6 +6567,14 @@ struct ContentView: View {
                 ) { p in
                     Task { @MainActor in loadProgress = p }
                 }
+                if let directories = WorkspaceStore.load(url).resourceDirectories {
+                    coordinator.parsed.resourceDirectories = directories + coordinator.parsed.resourceDirectories
+                    coordinator.fullRebuild()
+                }
+                if let recovery {
+                    coordinator.parsed.resourceDirectories = recovery.resourceDirectories
+                    coordinator.fullRebuild()
+                }
                 await MainActor.run { applyDocument(coordinator) }
             } catch PackageLoadStoreError.cancelled {
                 // User-initiated abort via the loading overlay's Cancel
@@ -6432,6 +6601,20 @@ struct ContentView: View {
         let doc = coordinator.document
         isLoading = false
         session.regen = coordinator
+        session.savedRevision = coordinator.parsed.document.revision
+        session.lastRecoveryRevision = nil
+        session.recoveryID = UUID()
+        session.recoveryGeneration += 1
+        session.recoveryStatus = ""
+        let recovery = session.pendingRecovery
+        session.pendingRecovery = nil
+        session.recoveredDocument = recovery != nil
+        session.recoveredFromID = recovery?.id
+        if let recovery { currentSourceURL = recovery.sourceURL; session.recoveryStatus = "Recovered copy — use Save As" }
+        if let url = currentSourceURL {
+            session.presets = WorkspaceStore.load(url).presets
+            NSDocumentController.shared.noteNewRecentDocumentURL(url)
+        }
         session.markupLayerId = coordinator.parsed.layerIdByName[MarkupStore.layerName]
         selection = []
         propertiesMinimized = false
@@ -6488,6 +6671,8 @@ struct ContentView: View {
         commandMessage = ""
         halo = nil
         animationTimer?.invalidate()
+        session.searchOrigin = nil
+        session.sheetViewports = currentSourceURL.map { WorkspaceStore.load($0).sheetViewports ?? [:] } ?? [:]
         closeSearch()
         searchIndex = SearchIndex(document: doc, store: coordinator.parsed.store)
         // Layers marked off/frozen in the file start hidden, like AutoCAD.
@@ -6495,7 +6680,7 @@ struct ContentView: View {
             hiddenLayerIds: Set(doc.layers.filter { $0.isOffByDefault || $0.isFrozen }.map(\.id)),
             hiddenXrefIds: [])
         layerSearch = ""
-        space = doc.modelGroups.isEmpty && !doc.paperGroups.isEmpty ? .paper : .model
+        space = doc.modelGroups.isEmpty && (!doc.paperGroups.isEmpty || !coordinator.parsed.paperLayouts.isEmpty) ? .paper : .model
 
         // Unresolved xrefs are already flagged per-row (orange) in the
         // External References panel (LayersPanel), but that's easy to miss
@@ -6513,7 +6698,7 @@ struct ContentView: View {
         //      count — the per-row orange flag already tells the user WHICH
         //      ones; this just makes sure at least one of them notices.
         let unresolvedCount = doc.xrefs.filter { !$0.isResolved }.count
-        if doc.modelGroups.isEmpty && doc.paperGroups.isEmpty {
+        if doc.modelGroups.isEmpty && doc.paperGroups.isEmpty && doc.modelImages.isEmpty && doc.paperImages.isEmpty && doc.paperViewports.isEmpty && coordinator.parsed.paperLayouts.isEmpty {
             alertMessage = "No supported entities found in the file."
         } else if doc.stats.truncated {
             alertMessage = "Drawing was very large; some entities were omitted for performance."
@@ -6556,6 +6741,9 @@ struct ContentView: View {
         } else {
             fitToView()
         }
+        let remembered = recovery?.workspace ?? currentSourceURL.flatMap { WorkspaceStore.load($0).lastView }
+        if let remembered { _ = session.restoreWorkspace(remembered) }
+        if recovery != nil { session.scheduleRecovery() }
     }
 
     // MARK: - View transforms
@@ -6564,17 +6752,8 @@ struct ContentView: View {
         fit(to: bounds)
     }
 
-    /// Fit: frames the main content; pressing Fit again while already fitted
-    /// zooms out to the true full extents (including stray faraway content).
-    private func fitButtonPressed() {
-        let primaryZoom = fitZoom(for: bounds)
-        if abs(zoom - primaryZoom) / max(primaryZoom, 1e-12) < 0.01,
-           fullBounds != bounds {
-            fit(to: fullBounds)
-        } else {
-            fit(to: bounds)
-        }
-    }
+    /// Fit always includes all rendered content, including complete text bounds.
+    private func fitButtonPressed() { fit(to: fullBounds) }
 
     private func fitZoom(for target: CGRect) -> CGFloat {
         guard target.width > 0, target.height > 0,
