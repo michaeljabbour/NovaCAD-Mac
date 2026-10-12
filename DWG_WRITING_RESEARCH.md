@@ -1,9 +1,13 @@
 # NovaCAD Native DWG Writing Evaluation
 
+> Research document. Native DWG writing remains unimplemented. The current
+> supported save path is full-document DXF export; see [README.md](README.md#save--export).
+
 ## 1. Context & Objective
-NovaCAD currently operates on a core design pattern of non-destructive markup editing (see `IMPLEMENTED_FEATURES.md`). In this design:
+NovaCAD currently reads DWG through conversion and edits a live DXF entity store
+(see `IMPLEMENTED_FEATURES.md`):
 - Core drawing assets in **DWG** format are read-only and converted to **DXF** via external command-line utilities (ODA File Converter or GNU LibreDWG fallback) for byte-level parsing by `CADCore` (implemented in Swift).
-- User edits and annotations are saved as non-destructive markup overlaid on top of the original drawing. These markups can then be exported as separate DXF files or merged back into the original DXF via `DXFWriter` (see `Sources/DWGViewer/DXFWriter.swift`).
+- Save/Save As writes the complete edited document as DXF via `DocumentDXFWriter`. Separate primitive-markup exporters remain available through `DXFWriter`.
 - Native **DWG writing** (directly outputting binary DWG files) is not yet supported. This document evaluates options, licensing, architecture, and a concrete path forward for introducing native DWG writing capabilities to NovaCAD.
 
 ---

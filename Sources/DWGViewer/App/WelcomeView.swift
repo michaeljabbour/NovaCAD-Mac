@@ -146,11 +146,11 @@ enum WhatsNew {
         "The AI Assistant is now a movable, resizable floating window — drag it anywhere over the drawing, or dock it back to the side.",
         "Shaded aisles, dock aprons, and any filled/hatched area are now fully editable — drag a corner, or use Stretch to extend one.",
         "The AI Assistant is more reliable — it keeps your chosen model when you open Settings and now tells you clearly when the model or local opencode server can't be reached instead of going quiet.",
+        "Ask the AI about the area you are viewing, with nearby labels and geometry.",
+        "Read formatted AI replies and search other sheets without moving your drawing view.",
+        "Keep the whole sheet fitted when opening side panels, with easier-to-click layer and close buttons.",
         "Return to the same zoom and position on each sheet, and after closing search.",
         "Find matches with their surroundings visible and skip empty sheets in navigation.",
-        "Switch between Properties and AI Assistant in one sidebar that remembers your tab.",
-        "Open inspectors beside their buttons, with larger click targets and accessible layer selection.",
-        "Reopen unchanged DWGs without launching the converter again."
     ]
 }
 

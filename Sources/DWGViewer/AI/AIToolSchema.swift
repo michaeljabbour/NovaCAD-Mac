@@ -47,20 +47,22 @@ enum AIToolSchema {
     static let tools: [Tool] = [
         Tool(
             name: "read_drawing",
-            description: "Read a summary of every entity currently visible in the drawing's model or paper space: entity id, type (line/circle/text/insert/etc.), layer name, world-space bounding box, and — for TEXT/MTEXT/ATTRIB — the text content, and — for INSERT — the block name it references. Large drawings are capped and marked truncated. Use this first to understand what's in the drawing before proposing any edit.",
+            description: "Read a compact overview: active space and sheet, available paper sheets, coordinate units, visible layers/counts, live viewport bounds and nearby text, and a small entity sample. Defaults to the active view. Use query_entities for targeted text/block searches and paged details; the overview is not exhaustive.",
             inputSchema: JSONSchema(
                 properties: [
-                    "space": Property(type: "string", description: "\"model\" or \"paper\" (default \"model\")")
+                    "space": Property(type: "string", description: "\"model\" or \"paper\" (default active view)")
                 ],
                 required: []
             )
         ),
         Tool(
             name: "list_inserts_on_layer",
-            description: "Exhaustively lists every visible block reference on one layer without the large-drawing cap used by read_drawing. Returns stable entity ids, block/display names, insertion reference points, and rendered bounds. Use this instead of trying to page through the whole drawing when enumerating workstations or other repeated objects.",
+            description: "Paged block references on one layer, including total count, returned count and nextOffset. Follow nextOffset for additional rows. For complete distance tables use the native export tool.",
             inputSchema: JSONSchema(properties: [
                 "layerName": Property(type: "string", description: "Layer to enumerate, e.g. 'station blocks'"),
-                "space": Property(type: "string", description: "\"model\" or \"paper\" (default \"model\")")
+                "offset": Property(type: "integer", description: "Row offset (default 0); follow nextOffset"),
+                "limit": Property(type: "integer", description: "Maximum rows (default 30, max 100, also byte-limited)"),
+                "space": Property(type: "string", description: "\"model\" or \"paper\" (default active view)")
             ], required: ["layerName"])
         ),
         Tool(
@@ -88,7 +90,7 @@ enum AIToolSchema {
                 properties: [
                     "x": Property(type: "number", description: "World-space X coordinate"),
                     "y": Property(type: "number", description: "World-space Y coordinate"),
-                    "space": Property(type: "string", description: "\"model\" or \"paper\" (default \"model\")")
+                    "space": Property(type: "string", description: "\"model\" or \"paper\" (default active view)")
                 ],
                 required: ["x", "y"]
             )
@@ -111,7 +113,7 @@ enum AIToolSchema {
                     "layerName": Property(type: "string", description: "The layer whose block references should all receive this attribute"),
                     "attributeTag": Property(type: "string", description: "The ATTRIB tag to set on every object, e.g. \"ROUTE\" or \"STATUS\""),
                     "value": Property(type: "string", description: "The value to set that tag to on every matching object"),
-                    "space": Property(type: "string", description: "\"model\" or \"paper\" (default \"model\")")
+                    "space": Property(type: "string", description: "\"model\" or \"paper\" (default active view)")
                 ],
                 required: ["layerName", "attributeTag", "value"]
             )
@@ -136,7 +138,7 @@ enum AIToolSchema {
             inputSchema: JSONSchema(
                 properties: [
                     "layerName": Property(type: "string", description: "The aisle centerline layer name, e.g. \"AISLE\""),
-                    "space": Property(type: "string", description: "\"model\" or \"paper\" (default \"model\")")
+                    "space": Property(type: "string", description: "\"model\" or \"paper\" (default active view)")
                 ],
                 required: ["layerName"]
             )
@@ -147,7 +149,7 @@ enum AIToolSchema {
             inputSchema: JSONSchema(
                 properties: [
                     "layerName": Property(type: "string", description: "The aisle centerline layer name"),
-                    "space": Property(type: "string", description: "\"model\" or \"paper\" (default \"model\")"),
+                    "space": Property(type: "string", description: "\"model\" or \"paper\" (default active view)"),
                     "maxGapDistanceFeet": Property(type: "number", description: "Maximum inferred connector distance in feet (default 10)"),
                     "targetLayerName": Property(type: "string", description: "Optional destination layer. Use the source layer to append repairs there, any other layer name to keep repairs separate, or omit for '<layerName>-REPAIRED'.")
                 ],
@@ -160,7 +162,7 @@ enum AIToolSchema {
             inputSchema: JSONSchema(
                 properties: [
                     "query": Property(type: "string", description: "A dock number, dock group name, or (partial) block name to search for"),
-                    "space": Property(type: "string", description: "\"model\" or \"paper\" (default \"model\")")
+                    "space": Property(type: "string", description: "\"model\" or \"paper\" (default active view)")
                 ],
                 required: ["query"]
             )
@@ -172,7 +174,7 @@ enum AIToolSchema {
                 properties: [
                     "aisleLayerName": Property(type: "string", description: "The aisle layer to route along"),
                     "connectorLayerName": Property(type: "string", description: "Optional second layer to union with the aisle network (e.g. a hand-drawn connector layer)"),
-                    "space": Property(type: "string", description: "\"model\" or \"paper\" (default \"model\")"),
+                    "space": Property(type: "string", description: "\"model\" or \"paper\" (default active view)"),
                     "useSelectionAsOrigin": Property(type: "boolean", description: "If true, use the user's current canvas selection as the origin (call get_selected_objects first to confirm what is selected). Overrides originX/originY only when those are absent."),
                     "originX": Property(type: "number", description: "Origin world-space X (from find_route_endpoints)"),
                     "originY": Property(type: "number", description: "Origin world-space Y"),
@@ -197,7 +199,7 @@ enum AIToolSchema {
                 "destinationLayerName": Property(type: "string", description: "Layer containing the destination block references (workstations / points of fit)"),
                 "aisleLayerName": Property(type: "string", description: "Primary aisle network layer"),
                 "connectorLayerName": Property(type: "string", description: "Optional separate repair/connector layer to union with the primary aisle network"),
-                "space": Property(type: "string", description: "\"model\" or \"paper\" (default \"model\")"),
+                "space": Property(type: "string", description: "\"model\" or \"paper\" (default active view)"),
                 "useSelectionAsOrigin": Property(type: "boolean", description: "If true, use the user's current canvas selection as the shared origin — the normal way to measure from a marketplace the user just clicked"),
                 "originQuery": Property(type: "string", description: "Reference dock, group, station, or block name used to resolve the shared origin"),
                 "originX": Property(type: "number", description: "Optional explicit origin X (takes precedence over selection and name)"),
@@ -215,7 +217,7 @@ enum AIToolSchema {
             name: "get_selected_objects",
             description: "Reports what the user currently has SELECTED on the drawing canvas: each object's entity id, type, layer, block/display name, any text content, and its world-space footprint, plus the combined bounding box of the whole selection. Use this whenever the user refers to something by pointing rather than naming it — \"use this as the origin\", \"measure from the selected object\", \"what did I just click\". Large selections report the aggregate bounds with only the first objects listed individually.",
             inputSchema: JSONSchema(properties: [
-                "space": Property(type: "string", description: "\"model\" or \"paper\" (default \"model\")")
+                "space": Property(type: "string", description: "\"model\" or \"paper\" (default active view)")
             ], required: [])
         ),
         Tool(
@@ -224,7 +226,7 @@ enum AIToolSchema {
             inputSchema: JSONSchema(properties: [
                 "pathsJSON": Property(type: "string", description: "JSON array of paths, encoded as a string. Each path is either [[x,y],[x,y],...] or {\"points\":[[x,y],...]}. Example: '[[[0,0],[100,0],[100,50]]]'"),
                 "layerName": Property(type: "string", description: "Layer to draw on (default \"AI-TRAVEL-PATHS\"). Keep a batch on one layer so it can be reviewed together."),
-                "space": Property(type: "string", description: "\"model\" or \"paper\" (default \"model\")"),
+                "space": Property(type: "string", description: "\"model\" or \"paper\" (default active view)"),
                 "closed": Property(type: "boolean", description: "If true, each path is closed into a filled shape instead of an open polyline (default false)"),
                 "colorIndex": Property(type: "integer", description: "AutoCAD color index for the geometry; 256 = ByLayer (default)"),
                 "replaceExistingLayerContent": Property(type: "boolean", description: "If true, clear anything already on the target layer first — use when redrawing a batch so paths don't stack up (default false)")
@@ -232,15 +234,17 @@ enum AIToolSchema {
         ),
         Tool(
             name: "query_entities",
-            description: "FILTERED, PAGED entity search — the right tool for a huge drawing. Unlike read_drawing (which caps at a few thousand entities and returns everything it happens to find first), this answers a targeted question — INSERTs on a layer, blocks whose name contains a string, text containing a phrase — and returns results in pages via offset/limit, with totalMatched and nextOffset so you can walk an arbitrarily long list in bounded chunks without flooding the conversation. Use countOnly=true first to size a job before pulling any rows. Layer matching is substring-based and accepts xref-qualified layers.",
+            description: "Search rendered text, blocks, and line/arc/polyline geometry by layer, name or text. Use visibleOnly:true for objects in the current zoomed canvas area. Results have totalMatched and nextOffset; pages have row and byte limits. Use countOnly to size a job. Paper defaults to the active sheet; sheetName reads another sheet without moving the canvas.",
             inputSchema: JSONSchema(properties: [
                 "types": Property(type: "array", description: "Entity types to include, e.g. [\"insert\"] or [\"text\"]. Omit for all supported types.", items: .init(type: "string")),
                 "layerContains": Property(type: "string", description: "Only entities whose layer name contains this (case-insensitive)"),
                 "nameContains": Property(type: "string", description: "For INSERTs: only those whose block/display name contains this"),
                 "textContains": Property(type: "string", description: "For TEXT/MTEXT: only those whose content contains this"),
-                "space": Property(type: "string", description: "\"model\" or \"paper\" (default \"model\")"),
+                "sheetName": Property(type: "string", description: "Exact paper sheet name from read_drawing. Use with space: paper; omitted means active sheet."),
+                "space": Property(type: "string", description: "\"model\" or \"paper\" (default active view)"),
                 "offset": Property(type: "integer", description: "Row offset for paging (default 0) — pass the previous reply's nextOffset to continue"),
-                "limit": Property(type: "integer", description: "Maximum rows to return (default 200, max 2000)"),
+                "limit": Property(type: "integer", description: "Maximum rows to return (default 30, max 100, also byte-limited)"),
+                "visibleOnly": Property(type: "boolean", description: "Only objects intersecting the live canvas bounds; requires active space/sheet. Re-read after pan or zoom. Defaults false. Geometry bounds can overestimate curved shapes."),
                 "countOnly": Property(type: "boolean", description: "If true, return only totalMatched with no rows — use to size a job first (default false)")
             ], required: [])
         ),
@@ -258,7 +262,7 @@ enum AIToolSchema {
             inputSchema: JSONSchema(
                 properties: [
                     "layerName": Property(type: "string", description: "The aisle centerline layer to shade"),
-                    "space": Property(type: "string", description: "\"model\" or \"paper\" (default \"model\")"),
+                    "space": Property(type: "string", description: "\"model\" or \"paper\" (default active view)"),
                     "fallbackWidthFeet": Property(type: "number", description: "Width to use for aisle segments with no measured or annotated width, in feet (default 13.34, i.e. 13'-4\", the most common width found on typical plant layouts)")
                 ],
                 required: ["layerName"]
@@ -269,7 +273,7 @@ enum AIToolSchema {
             description: "Detects dock doors (by their \"DOCK <n>\" text labels, across whatever layers carry them) and stages one apron shape per bank of consecutive, evenly-spaced doors, for the user to review and approve — the staging floor immediately inside the dock line where inbound/outbound freight is set down. Aprons are placed on a NEW 'Dock Apron-AI' layer, at a caller-supplied depth (dock-to-nearest-aisle distance varies too widely — from a few feet to over a thousand — to auto-measure reliably; pass depthSuggestionAisleLayerName to get an informed per-bank suggestion instead). Deterministic: call again after docks move to redraw aprons on the same layer with fresh positions. Once applied, each apron is an ORDINARY, FULLY EDITABLE shape with draggable corner grips — the user can resize/reshape/move/delete it like any other object, so never claim otherwise.",
             inputSchema: JSONSchema(
                 properties: [
-                    "space": Property(type: "string", description: "\"model\" or \"paper\" (default \"model\")"),
+                    "space": Property(type: "string", description: "\"model\" or \"paper\" (default active view)"),
                     "depthFeet": Property(type: "number", description: "Apron depth inward from the dock line, in feet (default 40)"),
                     "endPaddingFeet": Property(type: "number", description: "Extra length added at each end of a bank's frontage, in feet (default 0)"),
                     "depthSuggestionAisleLayerName": Property(type: "string", description: "Optional: an aisle layer name to measure suggested per-bank depths against (reported for reference; does not change depthFeet automatically)")

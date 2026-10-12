@@ -942,6 +942,7 @@ enum Regenerator {
 
     static func build(from parsed: EditableParsedDocument,
                       parseSeconds: Double,
+                      paperLayoutID: UInt64? = nil,
                       progress: (Double) -> Void) -> DXFDocument {
         let t0 = Date()
         let store = parsed.store
@@ -951,7 +952,8 @@ enum Regenerator {
         var modelImages: [RasterPlacement] = []
         var paperImages: [RasterPlacement] = []
         var viewports: [PaperViewport] = []
-        let paperLayout = parsed.paperLayouts.first { $0.id == parsed.activePaperLayoutID }
+        let paperOwnership = PaperLayoutOwnership(parsed)
+        let paperLayout = paperOwnership.sheets.first { $0.id == (paperLayoutID ?? parsed.activePaperLayoutID) }
 
         // ---- Identify xrefs and route modern model/paper-space blocks ----
         // (Same rules as GeometryBuilder: *MODEL_SPACE/*PAPER_SPACE block
@@ -1185,7 +1187,7 @@ enum Regenerator {
                     switch space {
                     case .model: matches = h.owner.isModel
                     case .paper:
-                        matches = h.owner.isPaper && (paperLayout?.contains(EntityID(raw: Int32(i)), in: store) ?? true)
+                        matches = h.owner.isPaper && (paperLayout?.contains(EntityID(raw: Int32(i)), in: store, ownership: paperOwnership) ?? true)
                     }
                     guard matches else { continue }
                     body(EntityID(raw: Int32(i)))
