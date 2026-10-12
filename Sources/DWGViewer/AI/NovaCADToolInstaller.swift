@@ -209,6 +209,28 @@ enum NovaCADToolInstaller {
     """
         ),
         ToolSpec(
+            name: "propose_explode_block",
+            description: AIToolSchema.tools.first { $0.name == "propose_explode_block" }!.description,
+            argsDeclaration: """
+    entityId: \(arg("num", "Root block instance ID from query_entities or selection, on the active sheet/space.")),
+    curveEntityIdsJSON: \(arg("str", "JSON array of 1–64 specific curve IDs to ungroup, from query_entities. Other curves stay grouped. Omit only for all curves in a small block.", optional: true))
+    """
+        ),
+        ToolSpec(
+            name: "inspect_geometry",
+            description: AIToolSchema.tools.first { $0.name == "inspect_geometry" }!.description,
+            argsDeclaration: """
+    entityIdsJSON: \(arg("str", "JSON array of 1–16 entity IDs; omit for current selection. Read exact geometry before proposing edits.", optional: true))
+    """
+        ),
+        ToolSpec(
+            name: "propose_geometry_edits",
+            description: AIToolSchema.tools.first { $0.name == "propose_geometry_edits" }!.description,
+            argsDeclaration: """
+    editsJSON: \(arg("str", AIToolSchema.tools.first { $0.name == "propose_geometry_edits" }!.inputSchema.properties["editsJSON"]!.description))
+    """
+        ),
+        ToolSpec(
             name: "query_entities",
             description: "Search rendered text, blocks, and line/arc/polyline geometry by layer, name or text. Use visibleOnly:true for objects in the current zoomed canvas area. Results have totalMatched and nextOffset; pages have row and byte limits. Use countOnly to size a job. Paper defaults to the active sheet; sheetName reads another sheet without moving the canvas.",
             argsDeclaration: """

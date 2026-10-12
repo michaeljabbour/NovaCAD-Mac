@@ -143,14 +143,13 @@ enum WhatsNew {
         "Select an object on the drawing and say \"measure from this\" — the AI Assistant can now see what you have selected.",
         "The AI Assistant can draw each travel path on the drawing so you can check the route it measured and adjust it yourself.",
         "The AI Assistant now shows whether it's working or stalled, and a new reset button restarts it WITHOUT clearing your conversation.",
-        "The AI Assistant is now a movable, resizable floating window — drag it anywhere over the drawing, or dock it back to the side.",
         "Shaded aisles, dock aprons, and any filled/hatched area are now fully editable — drag a corner, or use Stretch to extend one.",
         "The AI Assistant is more reliable — it keeps your chosen model when you open Settings and now tells you clearly when the model or local opencode server can't be reached instead of going quiet.",
+        "Ask the AI to reshape existing curves, review a before-and-after preview, and apply or undo the change.",
         "Ask the AI about the area you are viewing, with nearby labels and geometry.",
         "Read formatted AI replies and search other sheets without moving your drawing view.",
         "Keep the whole sheet fitted when opening side panels, with easier-to-click layer and close buttons.",
         "Return to the same zoom and position on each sheet, and after closing search.",
-        "Find matches with their surroundings visible and skip empty sheets in navigation.",
     ]
 }
 

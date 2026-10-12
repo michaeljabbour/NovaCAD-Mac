@@ -173,6 +173,8 @@ struct RegenDelta {
 /// and "the render model reflects it," analogous to how `Regenerator` is the
 /// glue between "a freshly parsed store" and "a render model."
 final class RegenCoordinator {
+    /// Prevent a proposal from being applied to a different loaded document.
+    let geometryEditIdentity = UUID()
     let parsed: EditableParsedDocument
     private(set) var document: DXFDocument
     private(set) var revision: UInt64 = 0

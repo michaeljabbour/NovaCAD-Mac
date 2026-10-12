@@ -5957,11 +5957,17 @@ struct ContentView: View {
     /// transaction.
     private func applyAIProposedGeometry(_ actions: [AIProposedGeometry]) -> Bool {
         guard let regen else { return false }
-        let created = AIProposedGeometryApplier.apply(actions, session: session, regen: regen)
-        commandMessage = created == 0
-            ? "AI Assistant — no geometry could be created"
-            : "AI Assistant — created \(created) entit\(created == 1 ? "y" : "ies")"
-        return created > 0
+        do {
+            let changed = try AIProposedGeometryApplier.apply(actions, session: session, regen: regen)
+            commandMessage = changed == 0
+                ? "AI Assistant — no geometry changed"
+                : "AI Assistant — applied geometry changes (Undo available)"
+            return changed > 0
+        } catch {
+            commandMessage = error.localizedDescription
+            session.aiAssistant.errorMessage = error.localizedDescription
+            return false
+        }
     }
 
     /// Nearest visible circle/arc whose ring passes within tolerance of `world`.

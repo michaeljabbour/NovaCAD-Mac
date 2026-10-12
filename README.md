@@ -129,7 +129,7 @@ still requires the separate [converter setup](#dwg-files); DXF opens directly.
 Self-contained drawings open without scanning their parent folder. NovaCAD
 indexes sibling drawings only when it needs to resolve external references.
 
-See [CHANGELOG.md](CHANGELOG.md) for the 1.6.1 changes.
+See [CHANGELOG.md](CHANGELOG.md) for the 1.6.1 and 1.6.2 changes.
 
 Prebuilt installers are attached to
 [Releases](https://github.com/ryandirezze/NovaCAD-Mac/releases/latest).
@@ -256,8 +256,8 @@ which requires a paid Developer ID.
 
 The **AI Assistant** tab in the shared **Properties & AI** sidebar can answer
 questions about the open drawing and,
-on supported backends, call 18 built-in drawing tools (read entities,
-extract attributes, propose attribute edits, analyze/repair aisle networks,
+on supported backends, call 21 built-in drawing tools (read entities,
+inspect and reshape geometry, extract/edit attributes, analyze/repair aisle networks,
 route travel distances, shade aisle/dock areas, export CSVs, and more).
 Edits and geometry are **staged for your review** — nothing is applied to the
 drawing until you click Apply. The assistant is docked in this sidebar; the
@@ -278,6 +278,21 @@ The assistant also receives the live canvas bounds and nearby text.
 including nearby line/arc/polyline geometry. This is drawing data, not screenshot
 vision; bounds intersection can include objects only partly on screen. Paper coordinates may be scaled, so the assistant
 must confirm scale and endpoints before claiming a real-world distance.
+
+For existing geometry, `inspect_geometry` reads exact points and curves, then
+`propose_geometry_edits` stages replacements or deletions of explicit object IDs.
+Lines, flat 2D polylines (including curved edges), arcs and circles are supported.
+A dashed/solid before-and-after preview accompanies Apply; the whole batch is one
+Undo step. Source layer/style and sheet are preserved. A changed drawing or a
+locked/hidden target prevents applying a stale proposal. Dimensions and notes are
+not automatically updated.
+
+For curves inside a simple local block, `propose_explode_block` first stages
+ungrouping up to 64 specified curves from that instance. Other curves, notes, fills and nested blocks remain
+in a private remainder block at the original transform; other instances stay
+unchanged. Apply that step, then ask the assistant to inspect and reshape the new
+objects. Xrefs, 3D/irregular block transforms, attributes and attached metadata
+are reported as unsupported instead of being discarded.
 
 | Provider | API | Tool-calling |
 | --- | --- | --- |
